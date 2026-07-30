@@ -1,0 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+body {
+  font-family: 'Inter', 'Noto Sans JP', sans-serif;
+  background-color: #ffffff; /* 完全な白色 */
+  color: #1e293b; /* 読みやすい濃いグレー */
+  user-select: none; /* キャンバス描画中の意図しないテキスト選択を防止 */
+  overflow: hidden; /* 全画面手書き操作をスムーズに行うためスクロールを抑制 */
+}
+
+/* パッと切り替えるためのスタイル（透明度は0%か100%のみ。） */
+.fade-out {
+  opacity: 0;
+}
