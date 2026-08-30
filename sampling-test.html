@@ -49,6 +49,8 @@
   <div class="cell"><div class="k">画面リフレッシュレート</div><div class="v" id="fps">測定中</div></div>
   <div class="cell"><div class="k">筆圧 最小〜最大</div><div class="v" id="press">-</div></div>
   <div class="cell"><div class="k">傾き altitude/azimuth</div><div class="v" id="tilt">-</div></div>
+  <div class="cell hi"><div class="k">点の距離 中央値/最大</div><div class="v" id="dist">-</div></div>
+  <div class="cell hi"><div class="k">同時刻 / 同座標の重複</div><div class="v" id="dup">-</div></div>
 </div>
 
 <canvas id="pad"></canvas>
@@ -130,6 +132,10 @@
   var allGaps = [];            // ストローク内の点と点の間隔だけを集める
   var totalMoves = 0, totalSamples = 0, totalStrokes = 0;
   var strokeGapCount = 0, strokeGapSum = 0, bestRate = 0;
+  var allDists = [];                  // 連続する点と点の距離 (CSS px)
+  var sameTimeCount = 0;              // 直前の点と時刻が同じだった回数
+  var sameCoordCount = 0;             // 直前の点と座標が同じだった回数
+  var prevX = null, prevY = null;
   var pMin = 1, pMax = 0, lastAlt = null, lastAzi = null;
   var lastX = 0, lastY = 0, lastType = '-', fracCoords = false;
   var lastReportAt = 0;
@@ -140,13 +146,15 @@
     allGaps = [];
     totalMoves = 0; totalSamples = 0; totalStrokes = 0;
     strokeGapCount = 0; strokeGapSum = 0; bestRate = 0;
+    allDists = []; sameTimeCount = 0; sameCoordCount = 0;
+    prevX = null; prevY = null;
     pMin = 1; pMax = 0; lastAlt = null; lastAzi = null;
     lastType = '-'; fracCoords = false;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pad.width, pad.height);
     ctx.restore();
-    ['ptype', 'hz', 'shz', 'per', 'gap', 'gapmed', 'best', 'press', 'tilt'].forEach(function (id) {
+    ['ptype', 'hz', 'shz', 'per', 'gap', 'gapmed', 'best', 'press', 'tilt', 'dist', 'dup'].forEach(function (id) {
       $(id).textContent = '-';
     });
     $('acc').textContent = '0 / 0';
@@ -171,6 +179,8 @@
     strokeGapCount = 0;
     strokeGapSum = 0;
     prevSampleT = null;   // ストローク間の空白時間を間隔に含めない
+    prevX = null;
+    prevY = null;         // ストローク間の飛びを距離に含めない
   }
 
   function report() {
@@ -193,6 +203,10 @@
     $('gap').innerHTML = mn.toFixed(1) + ' / ' + mx.toFixed(1) + '<small> ms</small>';
     $('best').innerHTML = (bestRate > 0 ? bestRate.toFixed(1) : '-') + '<small> 点/秒</small>';
     $('acc').textContent = totalStrokes + ' / ' + totalSamples;
+    var dMed = median(allDists), dMax = 0;
+    for (var q = 0; q < allDists.length; q++) if (allDists[q] > dMax) dMax = allDists[q];
+    $('dist').innerHTML = dMed.toFixed(1) + ' / ' + dMax.toFixed(1) + '<small> px</small>';
+    $('dup').innerHTML = sameTimeCount + ' / ' + sameCoordCount + '<small> 回</small>';
     $('press').textContent = (pMax > 0) ? (pMin.toFixed(3) + ' 〜 ' + pMax.toFixed(3)) : '取得できず';
     $('tilt').textContent = (lastAlt === null) ? '取得できず'
       : (lastAlt.toFixed(2) + ' / ' + (lastAzi === null ? '-' : lastAzi.toFixed(2)));
@@ -238,6 +252,32 @@
     out.push('間隔の分布 (件数 / 割合):');
     out = out.concat(histLines);
     out.push('');
+    out.push('*** 空間の解像度 ***');
+    out.push('同じ時刻の連続点     : ' + sameTimeCount + ' 回');
+    out.push('同じ座標の連続点     : ' + sameCoordCount + ' 回');
+    out.push('距離を測れた点       : ' + allDists.length + ' 回');
+    out.push('点の距離 中央値      : ' + dMed.toFixed(2) + ' px');
+    out.push('点の距離 最大        : ' + dMax.toFixed(2) + ' px');
+    var dEdges = [0, 0.5, 1, 2, 3, 5, 8, 12, 20, 30, 50, 1e9];
+    var dHist = [];
+    for (var dh = 0; dh < dEdges.length - 1; dh++) dHist.push(0);
+    for (var dj = 0; dj < allDists.length; dj++) {
+      for (var db = 0; db < dEdges.length - 1; db++) {
+        if (allDists[dj] >= dEdges[db] && allDists[dj] < dEdges[db + 1]) { dHist[db]++; break; }
+      }
+    }
+    out.push('距離の分布 (件数 / 割合):');
+    for (var dk = 0; dk < dHist.length; dk++) {
+      if (dHist[dk] === 0) continue;
+      var dhi = (dEdges[dk + 1] > 1e8) ? '+  ' : ('-' + dEdges[dk + 1]);
+      var dpct = dHist[dk] / allDists.length * 100;
+      var dbar = '';
+      for (var dn = 0; dn < Math.round(dpct / 2); dn++) dbar += '#';
+      out.push('  ' + (dEdges[dk] + dhi + ' px   ').slice(0, 13) +
+               ('     ' + dHist[dk]).slice(-5) + '  ' +
+               ('  ' + dpct.toFixed(1)).slice(-5) + '%  ' + dbar);
+    }
+    out.push('');
     out.push('筆圧                 : ' + (pMax > 0 ? pMin.toFixed(3) + ' - ' + pMax.toFixed(3) : '取得できず'));
     out.push('傾き alt/azi         : ' + (lastAlt === null ? '取得できず'
              : lastAlt.toFixed(3) + ' / ' + (lastAzi === null ? '-' : lastAzi.toFixed(3))));
@@ -260,6 +300,8 @@
     lastX = e.clientX;
     lastY = e.clientY;
     prevSampleT = e.timeStamp;   // このストロークの起点
+    prevX = e.clientX;
+    prevY = e.clientY;
     totalSamples++;
     try { pad.setPointerCapture(e.pointerId); } catch (err) {}
   });
@@ -282,8 +324,18 @@
       if (prevSampleT !== null) {
         var d = p.timeStamp - prevSampleT;
         if (d > 0) { allGaps.push(d); strokeGapCount++; strokeGapSum += d; }
+        else { sameTimeCount++; }
       }
       prevSampleT = p.timeStamp;
+
+      // 「カクカク」を直接決めるのは頻度ではなく、点と点が何ピクセル飛ぶか
+      if (prevX !== null) {
+        var dx = p.clientX - prevX, dy = p.clientY - prevY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist === 0) sameCoordCount++; else allDists.push(dist);
+      }
+      prevX = p.clientX;
+      prevY = p.clientY;
 
       if (typeof p.pressure === 'number' && p.pressure > 0) {
         if (p.pressure < pMin) pMin = p.pressure;
