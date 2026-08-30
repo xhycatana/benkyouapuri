@@ -10,8 +10,9 @@
   body { font-family: -apple-system, 'Noto Sans JP', sans-serif; margin: 0; padding: 12px;
          background: #fff; color: #1e293b; -webkit-user-select: none; user-select: none; }
   h1 { font-size: 15px; margin: 0 0 8px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin-bottom: 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 6px; margin-bottom: 10px; }
   .cell { border: 1px solid #cbd5e1; padding: 6px 8px; }
+  .cell.hi { border-color: #000; border-width: 2px; }
   .k { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
   .v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 1px; }
   .v small { font-size: 11px; font-weight: 400; color: #64748b; }
@@ -19,22 +20,32 @@
   .ng { color: #b91c1c; font-weight: 700; }
   #pad { width: 100%; height: 300px; border: 2px solid #000; touch-action: none; display: block; background: #fff; }
   .note { font-size: 11px; color: #64748b; margin: 8px 0; line-height: 1.6; }
-  button { padding: 8px 14px; border: 1px solid #000; background: #fff; font-size: 12px; }
+  button { padding: 9px 16px; border: 1px solid #000; background: #fff; font-size: 12px; }
   label { font-size: 12px; }
   #env { font-size: 10px; color: #64748b; word-break: break-all; line-height: 1.6;
          border-top: 1px solid #e2e8f0; padding-top: 8px; margin-top: 10px; }
+  textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 11px;
+             border: 1px solid #cbd5e1; padding: 8px; line-height: 1.5; -webkit-user-select: text; user-select: text; }
 </style>
 </head>
 <body>
 <h1>入力サンプリング測定</h1>
-<p class="note">下の枠内を <b>Apple Pencil で 2〜3 秒、素早くぐるぐる</b> と描いてください。ペンを離した時点の数値が結果です。</p>
+<p class="note">
+  下の枠内を <b>Apple Pencil で書いてください。</b>
+  <b>ペンを上げても結果はリセットされません</b>ので、何回でも書き足してください。
+  書いた量が多いほど数値が安定します（合計で 5 秒以上を目安に）。
+  ストロークとストロークの間の時間は、集計から除外しています。
+</p>
 
 <div class="grid">
   <div class="cell"><div class="k">入力デバイス</div><div class="v" id="ptype">-</div></div>
+  <div class="cell hi"><div class="k">点の取得頻度（累計）</div><div class="v" id="shz">-</div></div>
+  <div class="cell hi"><div class="k">点の間隔 中央値</div><div class="v" id="gapmed">-</div></div>
   <div class="cell"><div class="k">pointermove の頻度</div><div class="v" id="hz">-</div></div>
-  <div class="cell"><div class="k">実際に取れた点</div><div class="v" id="shz">-</div></div>
   <div class="cell"><div class="k">1イベントあたりの点数</div><div class="v" id="per">-</div></div>
-  <div class="cell"><div class="k">点の間隔 最小/中央/最大</div><div class="v" id="gap">-</div></div>
+  <div class="cell"><div class="k">点の間隔 最小/最大</div><div class="v" id="gap">-</div></div>
+  <div class="cell"><div class="k">最速だったストローク</div><div class="v" id="best">-</div></div>
+  <div class="cell"><div class="k">累計 ストローク/点</div><div class="v" id="acc">0 / 0</div></div>
   <div class="cell"><div class="k">画面リフレッシュレート</div><div class="v" id="fps">測定中</div></div>
   <div class="cell"><div class="k">筆圧 最小〜最大</div><div class="v" id="press">-</div></div>
   <div class="cell"><div class="k">傾き altitude/azimuth</div><div class="v" id="tilt">-</div></div>
@@ -45,12 +56,12 @@
 <p class="note">
   <label><input type="checkbox" id="chk-draw" checked> 測定中にキャンバスへ描画する</label>
   ／ チェックを外すと、描画処理がイベント頻度を落としているかどうかが分かります。
+  切り替えたら「リセット」を押してから測り直してください。
 </p>
-<p><button id="reset">リセット</button></p>
+<p><button id="reset">リセット（測定をやり直す）</button></p>
 
-<p class="note"><b>↓ この枠の中をすべてコピーして、そのまま貼り付けてください</b>（手で書き写すと丸め誤差が入ります）</p>
-<textarea id="summary" readonly rows="16"
-  style="width:100%;font-family:ui-monospace,monospace;font-size:11px;border:1px solid #cbd5e1;padding:8px;line-height:1.5;"></textarea>
+<p class="note"><b>↓ この枠の中をすべてコピーして、そのまま貼り付けてください</b></p>
+<textarea id="summary" readonly rows="18"></textarea>
 
 <div id="env"></div>
 
@@ -59,6 +70,7 @@
   var pad = document.getElementById('pad');
   var ctx = pad.getContext('2d');
   var chkDraw = document.getElementById('chk-draw');
+  var NL = String.fromCharCode(10);
   function $(id) { return document.getElementById(id); }
 
   var padRect = null;
@@ -92,132 +104,170 @@
     ' ／ 画面: ' + screen.width + ' x ' + screen.height +
     '<br>' + navigator.userAgent;
 
-  var frames = 0, fpsStart = 0;
-  function tick(t) {
-    if (!fpsStart) fpsStart = t;
-    frames++;
-    if (t - fpsStart < 1500) {
-      requestAnimationFrame(tick);
-    } else {
-      fpsValue = Math.round(frames / ((t - fpsStart) / 1000));
-      $('fps').innerHTML = fpsValue + '<small> Hz</small>';
+  // ---- 画面リフレッシュレート（バックグラウンドだと測れないので、見えたら測り直す） ----
+  var fpsValue = '-';
+  function measureFps() {
+    var frames = 0, start = 0;
+    function tick(t) {
+      if (!start) start = t;
+      frames++;
+      if (t - start < 1500) { requestAnimationFrame(tick); return; }
+      var hz = Math.round(frames / ((t - start) / 1000));
+      if (hz < 20 && document.visibilityState !== 'visible') { return; }
+      fpsValue = hz;
+      $('fps').innerHTML = hz + '<small> Hz</small>';
     }
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  measureFps();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && fpsValue === '-') measureFps();
+  });
 
-  var drawing = false, moveTimes = [], sampleTimes = [], rawCount = 0;
-  var pMin = 1, pMax = 0, lastAlt = null, lastAzi = null, lastX = 0, lastY = 0;
-  var lastType = '-', fpsValue = '-', fracCoords = false;
+  // ---- 累積カウンタ（リセットボタンを押すまで消えない） ----
+  var drawing = false;
+  var prevSampleT = null;      // 同じストローク内の直前の点の時刻。ペンを上げたら null に戻す
+  var allGaps = [];            // ストローク内の点と点の間隔だけを集める
+  var totalMoves = 0, totalSamples = 0, totalStrokes = 0;
+  var strokeGapCount = 0, strokeGapSum = 0, bestRate = 0;
+  var pMin = 1, pMax = 0, lastAlt = null, lastAzi = null;
+  var lastX = 0, lastY = 0, lastType = '-', fracCoords = false;
+  var lastReportAt = 0;
 
   function reset() {
     drawing = false;
-    moveTimes = []; sampleTimes = []; rawCount = 0;
+    prevSampleT = null;
+    allGaps = [];
+    totalMoves = 0; totalSamples = 0; totalStrokes = 0;
+    strokeGapCount = 0; strokeGapSum = 0; bestRate = 0;
     pMin = 1; pMax = 0; lastAlt = null; lastAzi = null;
+    lastType = '-'; fracCoords = false;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, pad.width, pad.height);
     ctx.restore();
-    ['ptype', 'hz', 'shz', 'per', 'gap', 'press', 'tilt'].forEach(function (id) {
+    ['ptype', 'hz', 'shz', 'per', 'gap', 'gapmed', 'best', 'press', 'tilt'].forEach(function (id) {
       $(id).textContent = '-';
     });
+    $('acc').textContent = '0 / 0';
     $('summary').value = '';
-    fracCoords = false;
   }
   $('reset').addEventListener('click', reset);
 
   function median(a) {
     if (!a.length) return 0;
     var b = a.slice().sort(function (x, y) { return x - y; });
-    return b[Math.floor(b.length / 2)];
+    var m = b.length >> 1;
+    return (b.length % 2) ? b[m] : (b[m - 1] + b[m]) / 2;
+  }
+
+  // ペンを上げたところでストロークを締める
+  function endStroke() {
+    if (strokeGapCount > 0 && strokeGapSum > 0) {
+      totalStrokes++;
+      var rate = strokeGapCount / (strokeGapSum / 1000);
+      if (rate > bestRate) bestRate = rate;
+    }
+    strokeGapCount = 0;
+    strokeGapSum = 0;
+    prevSampleT = null;   // ストローク間の空白時間を間隔に含めない
   }
 
   function report() {
-    if (moveTimes.length < 2) return;
-    var span = (moveTimes[moveTimes.length - 1] - moveTimes[0]) / 1000;
-    if (span <= 0) return;
+    if (allGaps.length < 2) return;
 
-    $('hz').innerHTML = Math.round((moveTimes.length - 1) / span) + '<small> 回/秒</small>';
-    $('shz').innerHTML = Math.round((sampleTimes.length - 1) / span) + '<small> 点/秒</small>';
-    $('per').textContent = (sampleTimes.length / moveTimes.length).toFixed(2);
+    var sum = 0, mn = Infinity, mx = 0;
+    for (var i = 0; i < allGaps.length; i++) {
+      var g = allGaps[i];
+      sum += g;
+      if (g < mn) mn = g;
+      if (g > mx) mx = g;
+    }
+    var activeSec = sum / 1000;
+    var med = median(allGaps);
 
-    var gaps = [];
-    for (var i = 1; i < sampleTimes.length; i++) {
-      var g = sampleTimes[i] - sampleTimes[i - 1];
-      if (g > 0) gaps.push(g);
-    }
-    if (gaps.length) {
-      var mn = Math.min.apply(null, gaps), mx = Math.max.apply(null, gaps);
-      $('gap').innerHTML = mn.toFixed(1) + ' / ' + median(gaps).toFixed(1) + ' / ' + mx.toFixed(1) + '<small> ms</small>';
-    }
+    $('shz').innerHTML = (allGaps.length / activeSec).toFixed(1) + '<small> 点/秒</small>';
+    $('hz').innerHTML = (totalMoves / activeSec).toFixed(1) + '<small> 回/秒</small>';
+    $('per').textContent = totalMoves ? (totalSamples / totalMoves).toFixed(3) : '-';
+    $('gapmed').innerHTML = med.toFixed(2) + '<small> ms</small>';
+    $('gap').innerHTML = mn.toFixed(1) + ' / ' + mx.toFixed(1) + '<small> ms</small>';
+    $('best').innerHTML = (bestRate > 0 ? bestRate.toFixed(1) : '-') + '<small> 点/秒</small>';
+    $('acc').textContent = totalStrokes + ' / ' + totalSamples;
     $('press').textContent = (pMax > 0) ? (pMin.toFixed(3) + ' 〜 ' + pMax.toFixed(3)) : '取得できず';
     $('tilt').textContent = (lastAlt === null) ? '取得できず'
       : (lastAlt.toFixed(2) + ' / ' + (lastAzi === null ? '-' : lastAzi.toFixed(2)));
 
-    // --- コピー用サマリー（手で書き写さずに済むように生の数値を出す） ---
-    var edges = [0, 2, 4, 6, 8, 10, 12, 14, 17, 20, 25, 34, 1e9];
+    // ---- 間隔の分布 ----
+    var edges = [0, 2, 3, 4, 5, 6, 8, 10, 12, 14, 17, 20, 25, 34, 1e9];
     var hist = [];
     for (var h = 0; h < edges.length - 1; h++) hist.push(0);
-    for (var g2 = 0; g2 < gaps.length; g2++) {
+    for (var j = 0; j < allGaps.length; j++) {
       for (var b = 0; b < edges.length - 1; b++) {
-        if (gaps[g2] >= edges[b] && gaps[g2] < edges[b + 1]) { hist[b]++; break; }
+        if (allGaps[j] >= edges[b] && allGaps[j] < edges[b + 1]) { hist[b]++; break; }
       }
     }
     var histLines = [];
-    for (var b2 = 0; b2 < hist.length; b2++) {
-      if (hist[b2] === 0) continue;
-      var hi = (edges[b2 + 1] > 1e8) ? '+' : ('-' + edges[b2 + 1]);
-      var pct = Math.round(hist[b2] / gaps.length * 100);
-      histLines.push('  ' + (edges[b2] + hi + ' ms').padEnd(12) + String(hist[b2]).padStart(4) +
-                     ' 点 (' + pct + '%) ' + new Array(Math.max(1, Math.round(pct / 3))).join('#'));
+    for (var k = 0; k < hist.length; k++) {
+      if (hist[k] === 0) continue;
+      var hi = (edges[k + 1] > 1e8) ? '+  ' : ('-' + edges[k + 1]);
+      var pct = hist[k] / allGaps.length * 100;
+      var bar = '';
+      for (var n = 0; n < Math.round(pct / 2); n++) bar += '#';
+      histLines.push('  ' + (edges[k] + hi + ' ms   ').slice(0, 13) +
+                     ('     ' + hist[k]).slice(-5) + '  ' +
+                     ('  ' + pct.toFixed(1)).slice(-5) + '%  ' + bar);
     }
-
-    var avg = 0;
-    for (var g3 = 0; g3 < gaps.length; g3++) avg += gaps[g3];
-    avg = gaps.length ? (avg / gaps.length) : 0;
 
     var out = [];
     out.push('--- 入力サンプリング測定 ---');
-    out.push('入力デバイス       : ' + lastType);
-    out.push('描画あり           : ' + (chkDraw.checked ? 'YES' : 'NO'));
-    out.push('計測時間           : ' + span.toFixed(3) + ' 秒');
-    out.push('pointermove 回数   : ' + moveTimes.length);
-    out.push('取得できた点の総数 : ' + sampleTimes.length);
-    out.push('pointermove 頻度   : ' + ((moveTimes.length - 1) / span).toFixed(1) + ' 回/秒');
-    out.push('点の取得頻度       : ' + ((sampleTimes.length - 1) / span).toFixed(1) + ' 点/秒');
-    out.push('1イベントあたり点数: ' + (sampleTimes.length / moveTimes.length).toFixed(3));
-    out.push('間隔 平均/中央     : ' + avg.toFixed(2) + ' / ' + median(gaps).toFixed(2) + ' ms');
-    out.push('間隔 最小/最大     : ' + (gaps.length ? Math.min.apply(null, gaps).toFixed(2) : '-') +
-             ' / ' + (gaps.length ? Math.max.apply(null, gaps).toFixed(2) : '-') + ' ms');
-    out.push('間隔の分布:');
+    out.push('入力デバイス         : ' + lastType);
+    out.push('描画あり             : ' + (chkDraw.checked ? 'YES' : 'NO'));
+    out.push('累計ストローク数     : ' + totalStrokes + (drawing ? ' (+ 描画中1本)' : ''));
+    out.push('累計 pointermove 回数: ' + totalMoves);
+    out.push('累計の点の総数       : ' + totalSamples);
+    out.push('実描画時間の合計     : ' + activeSec.toFixed(3) + ' 秒');
+    out.push('');
+    out.push('点の取得頻度         : ' + (allGaps.length / activeSec).toFixed(1) + ' 点/秒');
+    out.push('pointermove 頻度     : ' + (totalMoves / activeSec).toFixed(1) + ' 回/秒');
+    out.push('1イベントあたり点数  : ' + (totalMoves ? (totalSamples / totalMoves).toFixed(3) : '-'));
+    out.push('最速だったストローク : ' + (bestRate > 0 ? bestRate.toFixed(1) : '-') + ' 点/秒');
+    out.push('間隔 中央値          : ' + med.toFixed(2) + ' ms');
+    out.push('間隔 平均            : ' + (sum / allGaps.length).toFixed(2) + ' ms');
+    out.push('間隔 最小 / 最大     : ' + mn.toFixed(2) + ' / ' + mx.toFixed(2) + ' ms');
+    out.push('');
+    out.push('間隔の分布 (件数 / 割合):');
     out = out.concat(histLines);
-    out.push('筆圧               : ' + (pMax > 0 ? pMin.toFixed(3) + ' - ' + pMax.toFixed(3) : '取得できず'));
-    out.push('座標の小数点以下   : ' + (fracCoords ? 'あり（サブピクセル精度）' : 'なし（整数に丸められている）'));
-    out.push('画面リフレッシュ   : ' + fpsValue + ' Hz');
-    out.push('getCoalescedEvents : ' + (hasCoalesced ? '対応' : '非対応'));
-    out.push('pointerrawupdate   : ' + (hasRawUpdate ? '対応 (発火 ' + rawCount + ' 回)' : '非対応'));
-    out.push('isSecureContext    : ' + window.isSecureContext + ' (' + location.protocol + ')');
-    out.push('devicePixelRatio   : ' + (window.devicePixelRatio || 1));
-    out.push('UA                 : ' + navigator.userAgent);
-    $('summary').value = out.join(String.fromCharCode(10));
+    out.push('');
+    out.push('筆圧                 : ' + (pMax > 0 ? pMin.toFixed(3) + ' - ' + pMax.toFixed(3) : '取得できず'));
+    out.push('傾き alt/azi         : ' + (lastAlt === null ? '取得できず'
+             : lastAlt.toFixed(3) + ' / ' + (lastAzi === null ? '-' : lastAzi.toFixed(3))));
+    out.push('座標の小数点以下     : ' + (fracCoords ? 'あり (サブピクセル精度)' : 'なし (整数に丸められている)'));
+    out.push('画面リフレッシュ     : ' + fpsValue + ' Hz');
+    out.push('getCoalescedEvents   : ' + (hasCoalesced ? '対応' : '非対応'));
+    out.push('pointerrawupdate     : ' + (hasRawUpdate ? '対応' : '非対応'));
+    out.push('isSecureContext      : ' + window.isSecureContext + ' (' + location.protocol + ')');
+    out.push('devicePixelRatio     : ' + (window.devicePixelRatio || 1));
+    out.push('UA                   : ' + navigator.userAgent);
+    $('summary').value = out.join(NL);
   }
 
   pad.addEventListener('pointerdown', function (e) {
     e.preventDefault();
-    reset();
     padRect = pad.getBoundingClientRect();
     drawing = true;
     lastType = e.pointerType;
     $('ptype').textContent = e.pointerType;
-    lastX = e.clientX; lastY = e.clientY;
-    moveTimes.push(e.timeStamp);
-    sampleTimes.push(e.timeStamp);
+    lastX = e.clientX;
+    lastY = e.clientY;
+    prevSampleT = e.timeStamp;   // このストロークの起点
+    totalSamples++;
     try { pad.setPointerCapture(e.pointerId); } catch (err) {}
   });
 
   pad.addEventListener('pointermove', function (e) {
     if (!drawing) return;
     e.preventDefault();
-    moveTimes.push(e.timeStamp);
+    totalMoves++;
 
     var pts = null;
     if (hasCoalesced) {
@@ -227,7 +277,13 @@
 
     for (var i = 0; i < pts.length; i++) {
       var p = pts[i];
-      sampleTimes.push(p.timeStamp);
+      totalSamples++;
+
+      if (prevSampleT !== null) {
+        var d = p.timeStamp - prevSampleT;
+        if (d > 0) { allGaps.push(d); strokeGapCount++; strokeGapSum += d; }
+      }
+      prevSampleT = p.timeStamp;
 
       if (typeof p.pressure === 'number' && p.pressure > 0) {
         if (p.pressure < pMin) pMin = p.pressure;
@@ -248,16 +304,18 @@
       lastX = p.clientX;
       lastY = p.clientY;
     }
-    report();
-  });
 
-  if (hasRawUpdate) {
-    pad.addEventListener('pointerrawupdate', function () { rawCount++; });
-  }
+    // 集計は重いので、描画中は 200ms ごとに留める
+    var now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    if (now - lastReportAt > 200) { lastReportAt = now; report(); }
+  });
 
   ['pointerup', 'pointercancel'].forEach(function (t) {
     window.addEventListener(t, function () {
-      if (drawing) { drawing = false; report(); }
+      if (!drawing) return;
+      drawing = false;
+      endStroke();
+      report();
     });
   });
 })();
