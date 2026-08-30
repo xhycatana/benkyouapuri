@@ -1,13 +1,4 @@
-// --- 1. ローカルストレージキー ---
-const STORAGE_KEY_RANDOM = 'flashmemo_randomEnabled';
-const STORAGE_KEY_SWAP = 'flashmemo_swapEnabled';
-const STORAGE_KEY_SRS_SORT = 'flashmemo_srsSortEnabled';
-const STORAGE_KEY_GROUP_SIZE = 'flashmemo_groupSize';
-const STORAGE_KEY_PEN_COLOR = 'flashmemo_penColor';
-const STORAGE_KEY_PEN_WIDTH = 'flashmemo_penWidth';
-const STORAGE_KEY_WEIGHTS = 'flashmemo_algorithmWeights';
-
-// --- 2. アルゴリズム重み & パラメーター ---
+// --- 1. アルゴリズム重み & パラメーター ---
 let algorithmWeights = {
   w1: 1.2,
   w2: 1.5,
@@ -15,7 +6,7 @@ let algorithmWeights = {
   lockMinutes: 30
 };
 
-// --- 3. グローバルデータストア ---
+// --- 2. グローバルデータストア ---
 let originalList = [];        // 読み込まれた全データ（JSON構造拡張版）
 let currentList = [];         // 現在取り組んでいる対象リスト
 let userAnswers = {};         // 手書き画像キャッシュ
@@ -25,12 +16,12 @@ let wrongQuestions = [];       // 間違えた問題リスト
 let isFirstRound = true;       // 初回ラウンドか
 let currentPhase = 'import';   // 'import', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
-let isTransitioning = false;     // 切り替えガード
+let isTransitioning = false;
+let isBlanked = false;     // 切り替えガード
 
 let settingGroupSize = 0;      // ループ分割数
 let studyGroups = [];          // グループ配列
 let currentGroupIndex = 0;     // 現在のグループ番号
-let currentFileName = "memorization_data.json";
 
 let currentPenColor = '#000000';
 let currentPenWidth = 1.75;
@@ -84,7 +75,6 @@ const phaseImport = document.getElementById('phase-import');
 const phaseTest = document.getElementById('phase-test');
 const phaseReview = document.getElementById('phase-review');
 const leftControlsContainer = document.getElementById('left-controls-container');
-const exportContainer = document.getElementById('export-container');
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
@@ -96,7 +86,6 @@ const inputGroupSize = document.getElementById('input-group-size');
 const btnUseSample = document.getElementById('btn-use-sample');
 const btnToggleExample = document.getElementById('btn-toggle-example');
 const exampleBox = document.getElementById('example-box');
-const btnExportJson = document.getElementById('btn-export-json');
 
 const helpModal = document.getElementById('help-modal');
 const btnShowHelp = document.getElementById('btn-show-help');
@@ -154,7 +143,7 @@ function generateUUID() {
   });
 }
 
-// --- 4. 改良版ロジスティック回帰アルゴリズム ---
+// --- 3. 改良版ロジスティック回帰アルゴリズム ---
 function calculateProbability(q) {
   const now = new Date();
   let elapsedDays = 0;
@@ -202,12 +191,17 @@ function sortQuestionsBySrs(list) {
   return scored.map(s => s.item);
 }
 
-// --- 5. 全画面手書きキャンバス操作クラス ---
+// --- 4. 全画面手書きキャンバス操作クラス ---
 class GlobalHandwritingCanvas {
   constructor(canvasElement) {
     this.canvas = canvasElement;
     this.ctx = this.canvas.getContext('2d');
     this.activePointers = new Map();
+
+    // パームリジェクション用の状態
+    this.hasSeenPen = false;          // ペン入力を検知したか
+    this.touchSnapshot = null;        // 指ストローク開始前のキャンバス退避
+    this.touchDrawnState = null;      // 指ストローク開始前の userHasDrawn の値
 
     this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
     this.canvas.addEventListener('pointermove', (e) => this.draw(e));
@@ -273,19 +267,110 @@ class GlobalHandwritingCanvas {
     return { x: e.clientX, y: e.clientY };
   }
 
+  // --- パームリジェクション ---
+  // ペン（Apple Pencil）を一度でも検知したら、以降このセッションでは指の接触を描画に使わない。
+  // ペン検知より先に始まってしまった指ストロークは、ペンが触れた時点で取り消す。
+  // ペンを一度も使わない場合は従来どおり指で描けるので、UIの切り替えは不要。
+  notePointerType(e) {
+    if (e.pointerType !== 'pen' || this.hasSeenPen) return;
+    this.hasSeenPen = true;
+    this.discardTouchStroke();
+  }
+
+  shouldIgnorePointer(e) {
+    return this.hasSeenPen && e.pointerType === 'touch';
+  }
+
+  hasActiveTouch() {
+    for (const state of this.activePointers.values()) {
+      if (state.pointerType === 'touch') return true;
+    }
+    return false;
+  }
+
+  // 指ストロークを描き始める直前の状態を退避しておく（ペンが来たら巻き戻すため）
+  snapshotBeforeTouch() {
+    if (this.hasSeenPen || this.touchSnapshot) return;
+    if (this.canvas.width <= 0 || this.canvas.height <= 0) return;
+
+    const snap = document.createElement('canvas');
+    snap.width = this.canvas.width;
+    snap.height = this.canvas.height;
+    try {
+      snap.getContext('2d').drawImage(this.canvas, 0, 0);
+      this.touchSnapshot = snap;
+    } catch (err) { return; }
+
+    const activeQuestion = currentList[currentIndex];
+    this.touchDrawnState = activeQuestion
+      ? { id: activeQuestion.id, wasDrawn: userHasDrawn[activeQuestion.id] === true }
+      : null;
+  }
+
+  // 進行中の指ストロークを破棄し、退避しておいた状態へ巻き戻す
+  discardTouchStroke() {
+    for (const [pointerId, state] of this.activePointers) {
+      if (state.pointerType === 'touch') this.activePointers.delete(pointerId);
+    }
+
+    const snap = this.touchSnapshot;
+    const drawnState = this.touchDrawnState;
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
+    if (!snap) return;
+
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    try { this.ctx.drawImage(snap, 0, 0); } catch (err) {}
+    this.ctx.restore();
+    this.applyPenConfig();
+
+    // 手のひらの接触だけで「解答済み」扱いになっていた場合は元に戻す
+    if (drawnState && !drawnState.wasDrawn) {
+      delete userHasDrawn[drawnState.id];
+      const activeQuestion = currentList[currentIndex];
+      if (currentPhase === 'review' && activeQuestion && activeQuestion.id === drawnState.id) {
+        btnSelfCorrect.classList.add('opacity-30', 'pointer-events-none');
+        btnSelfCorrect.disabled = true;
+      }
+    }
+  }
+
+  // ホーム画面に戻ったときに解除（ペンが使えなくなった場合の逃げ道）
+  resetPalmRejection() {
+    this.hasSeenPen = false;
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
+  }
+
   startDrawing(e) {
     if (currentPhase === 'import' || isTransitioning) return;
+    this.notePointerType(e);
+    if (this.shouldIgnorePointer(e)) return;
     e.preventDefault();
+    if (e.pointerType === 'touch') this.snapshotBeforeTouch();
     const pos = this.getPointerPos(e);
-    this.activePointers.set(e.pointerId, { lastX: pos.x, lastY: pos.y });
+    this.activePointers.set(e.pointerId, {
+      lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
+      midX: pos.x, midY: pos.y,     // 直前に通過した中点（曲線の描き始め）
+      pointerType: e.pointerType
+    });
   }
 
   draw(e) {
     if (currentPhase === 'import' || isTransitioning) return;
+    this.notePointerType(e);
+    if (this.shouldIgnorePointer(e)) return;
 
     if (!this.activePointers.has(e.pointerId) && e.buttons > 0) {
+      if (e.pointerType === 'touch') this.snapshotBeforeTouch();
       const pos = this.getPointerPos(e);
-      this.activePointers.set(e.pointerId, { lastX: pos.x, lastY: pos.y });
+      this.activePointers.set(e.pointerId, {
+        lastX: pos.x, lastY: pos.y,
+        midX: pos.x, midY: pos.y,
+        pointerType: e.pointerType
+      });
       if (currentList[currentIndex]) userHasDrawn[currentList[currentIndex].id] = true;
     }
     
@@ -294,31 +379,18 @@ class GlobalHandwritingCanvas {
 
     const pointerState = this.activePointers.get(e.pointerId);
 
+    // ペンは getCoalescedEvents() で間引かれる前の高頻度サンプルをすべて拾う
+    let positions;
     if (e.pointerType === 'pen') {
-      const coalescedEvents = (e.getCoalescedEvents && e.getCoalescedEvents()) || [e];
-      this.ctx.beginPath();
-      this.ctx.moveTo(pointerState.lastX, pointerState.lastY);
-
-      let currentX = pointerState.lastX, currentY = pointerState.lastY;
-      for (const ev of coalescedEvents) {
-        const pos = this.getPointerPos(ev);
-        this.ctx.lineTo(pos.x, pos.y);
-        currentX = pos.x; currentY = pos.y;
-      }
-
-      this.ctx.stroke();
-      pointerState.lastX = currentX;
-      pointerState.lastY = currentY;
+      // getCoalescedEvents() は空配列を返すことがある（空配列は truthy なので || では拾えない）
+      let coalescedEvents = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+      if (coalescedEvents.length === 0) coalescedEvents = [e];
+      positions = coalescedEvents.map(ev => this.getPointerPos(ev));
     } else {
-      const pos = this.getPointerPos(e);
-      this.ctx.beginPath();
-      this.ctx.moveTo(pointerState.lastX, pointerState.lastY);
-      this.ctx.lineTo(pos.x, pos.y);
-      this.ctx.stroke();
-
-      pointerState.lastX = pos.x;
-      pointerState.lastY = pos.y;
+      positions = [this.getPointerPos(e)];
     }
+
+    for (const pos of positions) this.extendStroke(pointerState, pos);
 
     if (currentList[currentIndex]) {
       userHasDrawn[currentList[currentIndex].id] = true;
@@ -329,20 +401,54 @@ class GlobalHandwritingCanvas {
     }
   }
 
+  // サンプル点をそのまま直線で結ぶと折れ線になって角が見えるため、
+  // 「直前の点を制御点、隣り合う2点の中点を通過点」とする2次ベジェ曲線でつなぐ。
+  extendStroke(pointerState, pos) {
+    const midX = (pointerState.lastX + pos.x) / 2;
+    const midY = (pointerState.lastY + pos.y) / 2;
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(pointerState.midX, pointerState.midY);
+    this.ctx.quadraticCurveTo(pointerState.lastX, pointerState.lastY, midX, midY);
+    this.ctx.stroke();
+
+    pointerState.midX = midX;
+    pointerState.midY = midY;
+    pointerState.lastX = pos.x;
+    pointerState.lastY = pos.y;
+  }
+
   stopDrawing(e) {
     if (e && this.activePointers.has(e.pointerId)) {
+      // 最後の中点から実際の終点までを描き足してストロークを閉じる
+      const pointerState = this.activePointers.get(e.pointerId);
+      if (pointerState.midX !== pointerState.lastX || pointerState.midY !== pointerState.lastY) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(pointerState.midX, pointerState.midY);
+        this.ctx.lineTo(pointerState.lastX, pointerState.lastY);
+        this.ctx.stroke();
+      }
       this.activePointers.delete(e.pointerId);
+    }
+    // 指ストロークが最後まで描き切られたら、巻き戻し用の退避データは不要
+    if (!this.hasActiveTouch()) {
+      this.touchSnapshot = null;
+      this.touchDrawnState = null;
     }
   }
 
   clear() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.activePointers.clear();
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
   }
 
   applyPenConfig() {
     this.ctx.strokeStyle = currentPenColor;
     this.ctx.lineWidth = currentPenWidth;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
   }
 
   getDataURL() {
@@ -432,33 +538,44 @@ function switchPhase(newPhase) {
   if (newPhase === 'import') {
     phaseImport.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
-    exportContainer.classList.add('hidden');
     globalCanvas.clear();
+    globalCanvas.resetPalmRejection();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
-    exportContainer.classList.remove('hidden');
     initTestPhase();
   } else if (newPhase === 'review') {
     phaseReview.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
-    exportContainer.classList.remove('hidden');
     initReviewPhase();
   }
 }
 
 function transitionPhase(actionAfterFadeOut) {
-  if (isTransitioning) return; 
-  isTransitioning = true; 
+  // すでに暗転中（action の実行中）に呼ばれた場合は、さらに演出を重ねずにその場で実行する。
+  // （この分岐がないと isTransitioning ガードに弾かれ、
+  //   全問終了時・最終グループのスキップ時にホーム画面へ戻らなくなる）
+  if (isBlanked) {
+    actionAfterFadeOut();
+    return;
+  }
+
+  if (isTransitioning) return;
+  isTransitioning = true;
 
   setTimeout(() => {
     appBody.classList.add('fade-out');
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        actionAfterFadeOut();
+        isBlanked = true;
+        try {
+          actionAfterFadeOut();
+        } finally {
+          isBlanked = false;
+        }
         setTimeout(() => {
           appBody.classList.remove('fade-out');
-          isTransitioning = false; 
+          isTransitioning = false;
         }, 500);
       });
     });
@@ -519,7 +636,7 @@ function updateTaskProgress(mode) {
   }
 }
 
-// --- 6. 学習開始 ＆ 長期・短期ハイブリッド出題生成 ---
+// --- 5. 学習開始 ＆ 長期・短期ハイブリッド出題生成 ---
 function startLearning(problemData) {
   const shouldSrsSort = checkSrsSort.checked;
   const shouldShuffle = checkRandom.checked;
@@ -572,7 +689,6 @@ async function handleFileUpload(files) {
 
   let mergedData = [];
   for (const file of files) {
-    currentFileName = file.name;
     const text = await file.text();
     if (file.name.endsWith('.json')) {
       try {
@@ -613,7 +729,6 @@ dropZone.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', (e) => handleFileUpload(e.target.files));
 
 btnUseSample.addEventListener('click', () => {
-  currentFileName = "sample_memorization.json";
   startLearning(JSON.parse(JSON.stringify(sampleQuestionsJSON)));
 });
 
@@ -626,17 +741,6 @@ btnCloseHelp.addEventListener('click', () => helpModal.classList.add('hidden'));
 
 btnOpenSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
 btnCloseSettings.addEventListener('click', () => settingsModal.classList.add('hidden'));
-
-// --- 進捗保存 (1ファイル完結型JSONエクスポート) ---
-btnExportJson.addEventListener('click', () => {
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(originalList, null, 2));
-  const downloadAnchor = document.createElement('a');
-  downloadAnchor.setAttribute("href", dataStr);
-  downloadAnchor.setAttribute("download", currentFileName.endsWith('.json') ? currentFileName : 'memorization_data.json');
-  document.body.appendChild(downloadAnchor);
-  downloadAnchor.click();
-  downloadAnchor.remove();
-});
 
 // --- 戻る・スキップ ---
 btnBackToImport.addEventListener('click', () => {

@@ -2,8 +2,14 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>暗記アプリケーション (長期記憶エンジン搭載版)</title>
+
+  <!-- iPadの「ホーム画面に追加」でSafariのツールバーを消し、全画面で起動する -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -60,11 +66,6 @@
   <div class="relative z-10 w-full h-full flex flex-col justify-between pointer-events-none flex-grow">
     
     <header class="max-w-3xl w-full mx-auto flex justify-between items-center pb-2 pointer-events-auto">
-      <div id="export-container" class="hidden">
-        <button id="btn-export-json" class="px-3 py-1 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors">
-          進捗保存 (JSON)
-        </button>
-      </div>
       <div class="ml-auto">
         <button id="btn-open-settings" class="p-2 text-slate-400 hover:text-black transition-colors focus:outline-none" title="アルゴリズム設定">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -125,15 +126,6 @@
             <p class="text-xs text-slate-400 mt-1">またはクリックしてまとめて選択</p>
           </div>
 
-          <div id="restart-last-container" class="hidden flex flex-col sm:flex-row justify-center items-center gap-3 pt-1 w-full">
-            <button id="btn-resume-last" class="hidden w-full sm:w-auto px-5 py-3 bg-black hover:bg-slate-800 text-white text-xs font-bold rounded-none transition-colors shadow-sm focus:outline-none">
-              中断した問題からやり直す
-            </button>
-            <button id="btn-restart-last" class="w-full sm:w-auto px-5 py-3 bg-white hover:bg-slate-50 text-black border border-black text-xs font-bold rounded-none transition-colors shadow-sm focus:outline-none">
-              前回と同じ問題でもう一度解く
-            </button>
-          </div>
-
           <div class="pt-2 space-y-2">
             <div class="flex justify-center items-center space-x-3 text-[10px] text-slate-400/50">
               <button id="btn-use-sample" class="hover:text-black underline transition-colors focus:outline-none">
@@ -148,7 +140,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v5.0.0</span>
+              <span class="cursor-default select-none font-mono">v5.1.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -327,9 +319,6 @@
           
           <p class="font-bold">2. 長期記憶アルゴリズム ＋ 短期記憶ループ</p>
           <p class="pl-3">インポートされたデータから「改良版ロジスティック回帰」により記憶予測確率を自動計算し、記憶が薄れかけている問題から優先的に自動ピックアップされます。グループ分割ループ学習により全問正解するまで短期記憶へ叩き込みます。</p>
-
-          <p class="font-bold">3. 進捗のダウンロード保存 (JSON)</p>
-          <p class="pl-3">学習中の任意のタイミングで、画面左上の「進捗保存 (JSON)」ボタンを押すと、最新の回答履歴（正解数・不正解数・記憶寿命・最終解答日時）が含まれた単一のJSONファイルをダウンロード保存できます。</p>
         </div>
       </div>
       <div class="flex justify-end pt-4 border-t border-slate-100 mt-2">
