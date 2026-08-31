@@ -271,7 +271,9 @@ class GlobalHandwritingCanvas {
   // --- パームリジェクション ---
   // ペン（Apple Pencil）を一度でも検知したら、以降このセッションでは指の接触を描画に使わない。
   // ペン検知より先に始まってしまった指ストロークは、ペンが触れた時点で取り消す。
+  // 一度ペンを検知したら、ページを再読み込みするまでこの状態を維持する。
   // ペンを一度も使わない場合は従来どおり指で描けるので、UIの切り替えは不要。
+  // なお、これはキャンバスへの描画だけの話で、ボタンは指でも押せる。
   notePointerType(e) {
     if (e.pointerType !== 'pen' || this.hasSeenPen) return;
     this.hasSeenPen = true;
@@ -333,13 +335,6 @@ class GlobalHandwritingCanvas {
     }
   }
 
-  // ホーム画面に戻ったときに解除（ペンが使えなくなった場合の逃げ道）
-  resetPalmRejection() {
-    this.hasSeenPen = false;
-    this.touchSnapshot = null;
-    this.touchDrawnState = null;
-  }
-
   // --- ストローク管理 ---
   // 手書きは常に1本だけ。複数の指で同時に描く機能は使わないので、
   // 進行中のストロークは this.stroke（無ければ null）ひとつで管理する。
@@ -364,9 +359,13 @@ class GlobalHandwritingCanvas {
     if (currentPhase === 'import' || isTransitioning) return;
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
-    if (this.stroke) return;          // すでに1本描いている最中なら無視する
     e.preventDefault();
     if (e.pointerType === 'touch') this.snapshotBeforeTouch();
+
+    // 前のストロークが残っていたら、閉じてから新しく始める。
+    // ペンを上げてすぐ下ろすと pointerup を取りこぼすことがあり、
+    // 古いストロークが残ったままだと次の線が引けなくなる。
+    if (this.stroke) this.finishStroke();
     this.beginStroke(e);
   }
 
@@ -378,6 +377,14 @@ class GlobalHandwritingCanvas {
     // pointerdown を取りこぼした場合に限り、ここでストロークを開始する
     if (!this.stroke && e.buttons > 0) {
       if (e.pointerType === 'touch') this.snapshotBeforeTouch();
+      this.beginStroke(e);
+    }
+
+    // 別のポインタから来たペンの描画イベントなら、前のストロークが
+    // 取り残されていると判断して引き継ぐ（pointerdown ごと取りこぼした場合の保険）
+    if (this.stroke && this.stroke.pointerId !== e.pointerId &&
+        e.pointerType === 'pen' && e.buttons > 0) {
+      this.finishStroke();
       this.beginStroke(e);
     }
 
@@ -441,11 +448,10 @@ class GlobalHandwritingCanvas {
     if (typeof pos.t === 'number') s.lastT = pos.t;
   }
 
-  stopDrawing(e) {
-    if (!this.stroke) return;
-    if (e && e.pointerId !== undefined && e.pointerId !== this.stroke.pointerId) return;
-
+  finishStroke() {
     const s = this.stroke;
+    if (!s) return;
+
     // 最後の中点から実際の終点までを描き足してストロークを閉じる
     if (s.midX !== s.lastX || s.midY !== s.lastY) {
       this.ctx.beginPath();
@@ -458,6 +464,12 @@ class GlobalHandwritingCanvas {
     // 指ストロークが最後まで描き切られたら、巻き戻し用の退避データは不要
     this.touchSnapshot = null;
     this.touchDrawnState = null;
+  }
+
+  stopDrawing(e) {
+    if (!this.stroke) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== this.stroke.pointerId) return;
+    this.finishStroke();
   }
 
   clear() {
@@ -562,7 +574,6 @@ function switchPhase(newPhase) {
     phaseImport.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
-    globalCanvas.resetPalmRejection();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
