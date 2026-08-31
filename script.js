@@ -196,7 +196,8 @@ class GlobalHandwritingCanvas {
   constructor(canvasElement) {
     this.canvas = canvasElement;
     this.ctx = this.canvas.getContext('2d');
-    this.activePointers = new Map();
+    // 進行中のストローク。手書きは常に1本なので、0本(null)か1本しか持たない
+    this.stroke = null;
 
     // パームリジェクション用の状態
     this.hasSeenPen = false;          // ペン入力を検知したか
@@ -282,10 +283,7 @@ class GlobalHandwritingCanvas {
   }
 
   hasActiveTouch() {
-    for (const state of this.activePointers.values()) {
-      if (state.pointerType === 'touch') return true;
-    }
-    return false;
+    return !!(this.stroke && this.stroke.pointerType === 'touch');
   }
 
   // 指ストロークを描き始める直前の状態を退避しておく（ペンが来たら巻き戻すため）
@@ -309,9 +307,7 @@ class GlobalHandwritingCanvas {
 
   // 進行中の指ストロークを破棄し、退避しておいた状態へ巻き戻す
   discardTouchStroke() {
-    for (const [pointerId, state] of this.activePointers) {
-      if (state.pointerType === 'touch') this.activePointers.delete(pointerId);
-    }
+    if (this.hasActiveTouch()) this.stroke = null;
 
     const snap = this.touchSnapshot;
     const drawnState = this.touchDrawnState;
@@ -344,25 +340,33 @@ class GlobalHandwritingCanvas {
     this.touchDrawnState = null;
   }
 
+  // --- ストローク管理 ---
+  // 手書きは常に1本だけ。複数の指で同時に描く機能は使わないので、
+  // 進行中のストロークは this.stroke（無ければ null）ひとつで管理する。
+  // これにより、1ストローク中に別の pointerId が発行されても
+  // それが独立した線として二重に描かれることはない。
+
+  beginStroke(e) {
+    const pos = this.getPointerPos(e);
+    this.stroke = {
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
+      midX: pos.x, midY: pos.y      // 直前に通過した中点（曲線の描き始め）
+    };
+    // ボタンの上をペンが通っても入力が途切れないよう、
+    // このポインタの以降のイベントをキャンバスに固定する
+    try { this.canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+
   startDrawing(e) {
     if (currentPhase === 'import' || isTransitioning) return;
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
+    if (this.stroke) return;          // すでに1本描いている最中なら無視する
     e.preventDefault();
     if (e.pointerType === 'touch') this.snapshotBeforeTouch();
-
-    // 手書きは常に1本。すでに接地しているポインタがあるなら、
-    // 別の pointerId が来ても新しい線として描き始めない。
-    // （1ストローク中に2つ目の pointerId が発行されると、それぞれが
-    //   独立した線として描かれ、滑らかな線とカクついた線が二重に出る）
-    if (this.activePointers.size > 0) return;
-
-    const pos = this.getPointerPos(e);
-    this.activePointers.set(e.pointerId, {
-      lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
-      midX: pos.x, midY: pos.y,     // 直前に通過した中点（曲線の描き始め）
-      pointerType: e.pointerType
-    });
+    this.beginStroke(e);
   }
 
   draw(e) {
@@ -370,34 +374,30 @@ class GlobalHandwritingCanvas {
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
 
-    if (!this.activePointers.has(e.pointerId) && e.buttons > 0 && this.activePointers.size === 0) {
+    // pointerdown を取りこぼした場合に限り、ここでストロークを開始する
+    if (!this.stroke && e.buttons > 0) {
       if (e.pointerType === 'touch') this.snapshotBeforeTouch();
-      const pos = this.getPointerPos(e);
-      this.activePointers.set(e.pointerId, {
-        lastX: pos.x, lastY: pos.y,
-        midX: pos.x, midY: pos.y,
-        pointerType: e.pointerType
-      });
-      if (currentList[currentIndex]) userHasDrawn[currentList[currentIndex].id] = true;
+      this.beginStroke(e);
     }
-    
-    if (!this.activePointers.has(e.pointerId)) return;
+
+    // 進行中のストロークと違うポインタから来たイベントは捨てる
+    if (!this.stroke || this.stroke.pointerId !== e.pointerId) return;
+
     e.preventDefault();
 
-    const pointerState = this.activePointers.get(e.pointerId);
-
-    // ペンは getCoalescedEvents() で間引かれる前の高頻度サンプルをすべて拾う
+    // ペンは getCoalescedEvents() で間引かれる前の高頻度サンプル（240Hz）をすべて拾う。
+    // ただしこのAPIは HTTPS でないと使えないので、ローカルのHTTPでは60Hz相当に落ちる。
     let positions;
     if (e.pointerType === 'pen') {
-      // getCoalescedEvents() は空配列を返すことがある（空配列は truthy なので || では拾えない）
-      let coalescedEvents = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
-      if (coalescedEvents.length === 0) coalescedEvents = [e];
-      positions = coalescedEvents.map(ev => this.getPointerPos(ev));
+      // 空配列が返ることがある（空配列は truthy なので || では拾えない）
+      let coalesced = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+      if (coalesced.length === 0) coalesced = [e];
+      positions = coalesced.map(ev => this.getPointerPos(ev));
     } else {
       positions = [this.getPointerPos(e)];
     }
 
-    for (const pos of positions) this.extendStroke(pointerState, pos);
+    for (const pos of positions) this.extendStroke(pos);
 
     if (currentList[currentIndex]) {
       userHasDrawn[currentList[currentIndex].id] = true;
@@ -410,43 +410,44 @@ class GlobalHandwritingCanvas {
 
   // サンプル点をそのまま直線で結ぶと折れ線になって角が見えるため、
   // 「直前の点を制御点、隣り合う2点の中点を通過点」とする2次ベジェ曲線でつなぐ。
-  extendStroke(pointerState, pos) {
-    const midX = (pointerState.lastX + pos.x) / 2;
-    const midY = (pointerState.lastY + pos.y) / 2;
+  extendStroke(pos) {
+    const s = this.stroke;
+    const midX = (s.lastX + pos.x) / 2;
+    const midY = (s.lastY + pos.y) / 2;
 
     this.ctx.beginPath();
-    this.ctx.moveTo(pointerState.midX, pointerState.midY);
-    this.ctx.quadraticCurveTo(pointerState.lastX, pointerState.lastY, midX, midY);
+    this.ctx.moveTo(s.midX, s.midY);
+    this.ctx.quadraticCurveTo(s.lastX, s.lastY, midX, midY);
     this.ctx.stroke();
 
-    pointerState.midX = midX;
-    pointerState.midY = midY;
-    pointerState.lastX = pos.x;
-    pointerState.lastY = pos.y;
+    s.midX = midX;
+    s.midY = midY;
+    s.lastX = pos.x;
+    s.lastY = pos.y;
   }
 
   stopDrawing(e) {
-    if (e && this.activePointers.has(e.pointerId)) {
-      // 最後の中点から実際の終点までを描き足してストロークを閉じる
-      const pointerState = this.activePointers.get(e.pointerId);
-      if (pointerState.midX !== pointerState.lastX || pointerState.midY !== pointerState.lastY) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(pointerState.midX, pointerState.midY);
-        this.ctx.lineTo(pointerState.lastX, pointerState.lastY);
-        this.ctx.stroke();
-      }
-      this.activePointers.delete(e.pointerId);
+    if (!this.stroke) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== this.stroke.pointerId) return;
+
+    const s = this.stroke;
+    // 最後の中点から実際の終点までを描き足してストロークを閉じる
+    if (s.midX !== s.lastX || s.midY !== s.lastY) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(s.midX, s.midY);
+      this.ctx.lineTo(s.lastX, s.lastY);
+      this.ctx.stroke();
     }
+
+    this.stroke = null;
     // 指ストロークが最後まで描き切られたら、巻き戻し用の退避データは不要
-    if (!this.hasActiveTouch()) {
-      this.touchSnapshot = null;
-      this.touchDrawnState = null;
-    }
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
   }
 
   clear() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.activePointers.clear();
+    this.stroke = null;
     this.touchSnapshot = null;
     this.touchDrawnState = null;
   }
