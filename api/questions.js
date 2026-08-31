@@ -14,8 +14,9 @@ const REPO = process.env.QUESTIONS_REPO;
 const TOKEN = process.env.GITHUB_TOKEN;
 const PASS = process.env.APP_PASSPHRASE;
 
-const SETS_DIR = 'sets';        // 問題集の置き場所
-const INDEX_FILE = 'index.json'; // 一覧。保存のたびに更新する
+const SETS_DIR = 'sets';           // 問題集の置き場所
+const INDEX_FILE = 'index.json';   // 一覧。保存のたびに更新する
+const PROGRESS_FILE = 'progress.json'; // 解答履歴。問題ごとの成績
 
 // --- 合言葉の確認 ---------------------------------------------------------
 // 文字列比較にかかる時間から中身を推測されないよう、長さを揃えて比較する。
@@ -138,6 +139,45 @@ async function rebuildIndex() {
   return index;
 }
 
+// --- 解答履歴 -------------------------------------------------------------
+// 問題のIDごとに、正解数・不正解数・記憶の寿命・最終解答日時を持つ。
+// 端末をまたいでも引き継げるよう、問題集と同じ非公開リポジトリに置く。
+async function readProgress() {
+  const f = await readFile(PROGRESS_FILE);
+  if (!f) return { updated_at: null, stats: {} };
+  try {
+    const j = JSON.parse(f.text);
+    if (!j.stats || typeof j.stats !== 'object') j.stats = {};
+    return j;
+  } catch (err) {
+    return { updated_at: null, stats: {} };
+  }
+}
+
+// 端末を複数使っても取りこぼさないよう、置き換えではなく合成する。
+// 同じ問題については、最後に解いた日時が新しい方を採用する。
+function mergeStats(base, incoming) {
+  Object.keys(incoming || {}).forEach(function (id) {
+    const a = base[id];
+    const b = incoming[id];
+    if (!b || typeof b !== 'object') return;
+
+    const entry = {
+      correct: Math.max(0, parseInt(b.correct, 10) || 0),
+      incorrect: Math.max(0, parseInt(b.incorrect, 10) || 0),
+      lifespan: Number(b.lifespan) > 0 ? Number(b.lifespan) : 1.0,
+      last_answered_at: b.last_answered_at || null
+    };
+
+    if (!a) { base[id] = entry; return; }
+
+    const ta = a.last_answered_at ? Date.parse(a.last_answered_at) : 0;
+    const tb = entry.last_answered_at ? Date.parse(entry.last_answered_at) : 0;
+    if (tb >= ta) base[id] = entry;
+  });
+  return base;
+}
+
 // --- 入力の検証 -----------------------------------------------------------
 function cleanPath(p) {
   if (typeof p !== 'string') return null;
@@ -167,6 +207,11 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === 'GET') {
+      if (req.query.kind === 'progress') {
+        res.status(200).json(await readProgress());
+        return;
+      }
+
       if (req.query.rebuild) {
         const index = await rebuildIndex();
         res.status(200).json({ rebuilt: true, count: index.sets.length, sets: index.sets });
@@ -199,6 +244,16 @@ module.exports = async (req, res) => {
       if (typeof body === 'string') body = JSON.parse(body);
       if (!body || typeof body !== 'object') {
         res.status(400).json({ error: '内容が空です。' });
+        return;
+      }
+
+      // 解答履歴の保存
+      if (body.kind === 'progress') {
+        const current = await readProgress();
+        const merged = mergeStats(current.stats || {}, body.stats || {});
+        const saved = { updated_at: new Date().toISOString(), stats: merged };
+        await writeFile(PROGRESS_FILE, JSON.stringify(saved, null, 2), '解答履歴を更新');
+        res.status(200).json({ saved: true, count: Object.keys(merged).length });
         return;
       }
 

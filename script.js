@@ -610,6 +610,7 @@ function switchPhase(newPhase) {
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
     globalCanvas.resetPalmRejection();
+    saveProgress();
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
@@ -718,17 +719,23 @@ function startLearning(problemData) {
   settingGroupSize = Math.max(0, parseInt(inputGroupSize.value) || 0);
 
   // 表裏（問題と答え）の入れ替え
-  originalList = problemData.map(item => ({
-    id: item.id || generateUUID(),
-    question: shouldSwap ? item.answer : item.question,
-    answer: shouldSwap ? item.question : item.answer,
-    commentary: item.commentary || '',
-    correct_count: item.correct_count || 0,
-    incorrect_count: item.incorrect_count || 0,
-    lifespan: item.lifespan || 1.0,
-    last_answered_at: item.last_answered_at || null,
-    is_deleted: item.is_deleted || false
-  }));
+  originalList = problemData.map(item => {
+    const id = item.id || generateUUID();
+    // 保存済みの解答履歴があれば、それを優先して使う。
+    // これが無いと記憶予測が常に初期値のままになり、優先出題が意味を持たない。
+    const st = progressStats[id] || {};
+    return {
+      id: id,
+      question: shouldSwap ? item.answer : item.question,
+      answer: shouldSwap ? item.question : item.answer,
+      commentary: item.commentary || '',
+      correct_count: Number.isFinite(st.correct) ? st.correct : (item.correct_count || 0),
+      incorrect_count: Number.isFinite(st.incorrect) ? st.incorrect : (item.incorrect_count || 0),
+      lifespan: (Number.isFinite(st.lifespan) && st.lifespan > 0) ? st.lifespan : (item.lifespan || 1.0),
+      last_answered_at: st.last_answered_at || item.last_answered_at || null,
+      is_deleted: item.is_deleted || false
+    };
+  });
 
   // 長期記憶アルゴリズムによる優先順選出またはランダム
   if (shouldSrsSort) {
@@ -915,6 +922,7 @@ function updateSrsMetrics(question, isCorrect) {
     question.lifespan = Math.max(1.0, (question.lifespan || 1.0) * 0.5);
   }
   question.last_answered_at = new Date().toISOString();
+  recordProgress(question);
 }
 
 btnSelfCorrect.addEventListener('click', () => {
@@ -1036,6 +1044,103 @@ setupSlider('lock-input', 'lock-val', val => {
 });
 
 
+
+// --- 解答履歴 -------------------------------------------------------------
+// 問題のIDごとに成績を貯め、非公開リポジトリに書き戻す。
+// 1問ごとに通信するとコミットが膨大になるので、区切りでまとめて送る。
+// 送る前にアプリが閉じても失わないよう、端末にも控えを置く。
+
+const STORAGE_KEY_PROGRESS = 'flashmemo_progress';
+
+let progressStats = {};      // { 問題ID: { correct, incorrect, lifespan, last_answered_at } }
+let progressDirty = false;   // まだ書き戻していない変更があるか
+let progressSaving = false;
+let progressTimer = null;
+
+function readLocalProgress() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_PROGRESS);
+    const j = raw ? JSON.parse(raw) : null;
+    return (j && typeof j === 'object') ? j : {};
+  } catch (err) { return {}; }
+}
+
+function writeLocalProgress() {
+  try { localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(progressStats)); } catch (err) {}
+}
+
+// 同じ問題については、最後に解いた日時が新しい方を残す
+function mergeProgress(into, from) {
+  Object.keys(from || {}).forEach(function (id) {
+    const b = from[id];
+    if (!b || typeof b !== 'object') return;
+    const a = into[id];
+    if (!a) { into[id] = b; return; }
+    const ta = a.last_answered_at ? Date.parse(a.last_answered_at) : 0;
+    const tb = b.last_answered_at ? Date.parse(b.last_answered_at) : 0;
+    if (tb >= ta) into[id] = b;
+  });
+  return into;
+}
+
+async function loadProgress() {
+  const local = readLocalProgress();
+  try {
+    const remote = await api('/api/questions?kind=progress');
+    progressStats = mergeProgress({}, (remote && remote.stats) || {});
+    // 端末にだけ残っている新しい記録があれば、それを優先して書き戻す対象にする
+    const before = JSON.stringify(progressStats);
+    mergeProgress(progressStats, local);
+    if (JSON.stringify(progressStats) !== before) progressDirty = true;
+  } catch (err) {
+    if (err.unauthorized) return;
+    // 通信できないときは端末の控えだけで続行する
+    progressStats = local;
+  }
+  writeLocalProgress();
+  if (progressDirty) saveProgress();
+}
+
+function recordProgress(question) {
+  if (!question || !question.id) return;
+  progressStats[question.id] = {
+    correct: question.correct_count || 0,
+    incorrect: question.incorrect_count || 0,
+    lifespan: question.lifespan || 1.0,
+    last_answered_at: question.last_answered_at || new Date().toISOString()
+  };
+  progressDirty = true;
+  writeLocalProgress();
+
+  // 解き続けている間も、しばらく操作が途切れたら書き戻す
+  clearTimeout(progressTimer);
+  progressTimer = setTimeout(saveProgress, 60000);
+}
+
+async function saveProgress() {
+  if (!progressDirty || progressSaving) return;
+  if (!getPassphrase()) return;
+  clearTimeout(progressTimer);
+  progressSaving = true;
+  try {
+    await api('/api/questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'progress', stats: progressStats })
+    });
+    progressDirty = false;   // 送れたときだけ下ろす。失敗したら次の機会に再送する
+  } catch (err) {
+    // 失敗しても端末には残っているので、次回の起動時に送り直される
+  } finally {
+    progressSaving = false;
+  }
+}
+
+// アプリを閉じたり、別のアプリに切り替えたときにも書き戻す
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') saveProgress();
+});
+
 // --- 6. 問題集ライブラリ（非公開リポジトリから読み書きする） -----------------
 // 通信はすべて /api/questions を経由する。GitHub のトークンはサーバー側にしかなく、
 // ブラウザが持つのは合言葉だけ。
@@ -1117,6 +1222,7 @@ async function loadLibrary() {
   try {
     const data = await api('/api/questions');
     libraryIndex = (data && Array.isArray(data.sets)) ? data : { sets: [] };
+    await loadProgress();
     selectedPaths = selectedPaths.filter(function (p) {
       return libraryIndex.sets.some(function (s) { return s.path === p; });
     });
