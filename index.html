@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.0.0">
+  <link rel="stylesheet" href="style.css?v=6.1.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -163,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.0.0</span>
+              <span class="cursor-default select-none font-mono">v6.1.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -359,10 +359,18 @@
 
         <div>
           <label class="block font-bold text-slate-700 mb-1">
-            間違えたときの復習: <span id="fail-val" class="text-red-600 font-bold">30 分後</span>
+            間違えたときに残す割合: <span id="lapse-val" class="text-red-600 font-bold">20 %</span>
+          </label>
+          <input type="range" id="lapse-input" min="0" max="60" step="5" value="20" class="w-full accent-black">
+          <p class="text-[10px] text-slate-400 mt-0.5">よく覚えていた問題ほど、間違えても間隔を長く保ちます</p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">
+            間違えたときの最短間隔: <span id="fail-val" class="text-red-600 font-bold">30 分</span>
           </label>
           <input type="range" id="fail-input" min="5" max="240" step="5" value="30" class="w-full accent-black">
-          <p class="text-[10px] text-slate-400 mt-0.5">間違えた問題を、どれくらい後に最優先へ戻すか</p>
+          <p class="text-[10px] text-slate-400 mt-0.5">これより短くはなりません</p>
         </div>
 
         <div>
@@ -424,6 +432,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=6.0.0"></script>
+  <script src="script.js?v=6.1.0"></script>
 </body>
 </html>

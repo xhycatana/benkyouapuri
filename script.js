@@ -5,7 +5,8 @@ const FIRST_INTERVAL_DAYS = 1.0;   // 初めて正解したときの寿命
 
 let memorySettings = {
   ease: 2.5,          // 正解したとき寿命を何倍にするか
-  failMinutes: 30,    // 間違えたとき寿命を何分に戻すか
+  lapseKeep: 0.2,     // 間違えたとき、以前の寿命をどれだけ残すか
+  failMinutes: 30,    // 間違えたときの寿命の下限（分）
   lockMinutes: 30     // 直前に解いた問題を出題対象から外す時間
 };
 
@@ -940,8 +941,13 @@ function updateSrsMetrics(question, isCorrect) {
       : FIRST_INTERVAL_DAYS;
   } else {
     question.incorrect_count = (question.incorrect_count || 0) + 1;
-    // 間違えたら寿命を数十分まで戻す。次に開いたとき最優先で出てくる
-    question.lifespan = memorySettings.failMinutes / (60 * 24);
+    // 間違えても、以前の寿命の一部は残す。
+    // 一度覚えたものは覚え直すのも速いので、まっさらな新問題と同じ扱いにはしない。
+    // なお「すぐもう一度解かせる」役割は、その場の短期記憶ループが担っている。
+    // ここで決めるのは、解き直した後に次はいつ出すか。
+    const floorDays = memorySettings.failMinutes / (60 * 24);
+    const previousLife = (question.lifespan > 0) ? question.lifespan : 0;
+    question.lifespan = Math.max(floorDays, previousLife * memorySettings.lapseKeep);
   }
 
   question.last_answered_at = new Date().toISOString();
@@ -1063,10 +1069,15 @@ setupSlider('ease-input', 'ease-val', val => {
   saveMemorySettings();
   return val + ' 倍';
 });
+setupSlider('lapse-input', 'lapse-val', val => {
+  memorySettings.lapseKeep = parseInt(val, 10) / 100;
+  saveMemorySettings();
+  return val + ' %';
+});
 setupSlider('fail-input', 'fail-val', val => {
   memorySettings.failMinutes = parseInt(val, 10);
   saveMemorySettings();
-  return val + ' 分後';
+  return val + ' 分';
 });
 setupSlider('lock-input', 'lock-val', val => {
   memorySettings.lockMinutes = parseInt(val, 10);
@@ -1078,7 +1089,8 @@ setupSlider('lock-input', 'lock-val', val => {
 function applyMemorySettingsToUI() {
   const pairs = [
     ['ease-input', 'ease-val', memorySettings.ease, ' 倍'],
-    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分後'],
+    ['lapse-input', 'lapse-val', Math.round(memorySettings.lapseKeep * 100), ' %'],
+    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分'],
     ['lock-input', 'lock-val', memorySettings.lockMinutes, ' 分']
   ];
   pairs.forEach(function (p) {
