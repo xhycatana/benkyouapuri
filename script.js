@@ -271,7 +271,6 @@ class GlobalHandwritingCanvas {
   // --- パームリジェクション ---
   // ペン（Apple Pencil）を一度でも検知したら、以降このセッションでは指の接触を描画に使わない。
   // ペン検知より先に始まってしまった指ストロークは、ペンが触れた時点で取り消す。
-  // 一度ペンを検知したら、ページを再読み込みするまでこの状態を維持する。
   // ペンを一度も使わない場合は従来どおり指で描けるので、UIの切り替えは不要。
   // なお、これはキャンバスへの描画だけの話で、ボタンは指でも押せる。
   notePointerType(e) {
@@ -448,6 +447,13 @@ class GlobalHandwritingCanvas {
     if (typeof pos.t === 'number') s.lastT = pos.t;
   }
 
+  // ホーム画面に戻ったら解除する（ペンが使えなくなったときに指へ切り替える逃げ道）
+  resetPalmRejection() {
+    this.hasSeenPen = false;
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
+  }
+
   finishStroke() {
     const s = this.stroke;
     if (!s) return;
@@ -574,6 +580,7 @@ function switchPhase(newPhase) {
     phaseImport.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
+    globalCanvas.resetPalmRejection();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
