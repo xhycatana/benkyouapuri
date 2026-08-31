@@ -117,6 +117,9 @@
   // ---- 各方式の状態 ----
   var drawing = false;
   var totalPts = 0, totalEvents = 0;
+  // Safari は同じ点の並びを2回配信してくる（実機で確認）。
+  // そのまま繋ぐと数点ぶん巻き戻る直線が引かれ、二重線になる。
+  var lastT = null, lastPX = null, lastPY = null, dropped = 0;
 
   // ---- ポインタ監視 ----
   // 1ストローク中に別々の pointerId が現れると、アプリ側では
@@ -165,6 +168,7 @@
       ctxs[i].restore();
     }
     totalPts = 0; totalEvents = 0;
+    lastT = null; lastPX = null; lastPY = null; dropped = 0;
     seenPointers = new Map();
     activeIds = [];
     maxConcurrent = 0;
@@ -276,6 +280,8 @@
     activeIds.push(e.pointerId);
     if (activeIds.length > maxConcurrent) maxConcurrent = activeIds.length;
     notePointer(e, 'downs');
+    lastT = (typeof e.timeStamp === 'number') ? e.timeStamp : null;
+    lastPX = e.clientX; lastPY = e.clientY;
     var p = toLocal(e);
     beginA(p); beginB(p); beginC(p); beginD(p);
     try { cvs[0].setPointerCapture(e.pointerId); } catch (err) {}
@@ -295,17 +301,35 @@
     }
     if (!pts || pts.length === 0) pts = [e];
 
-    // ①②③ は 240Hz の全サンプルを使う
+    // 再配信された点を除外する（アプリ本体と同じ処理）
+    var fresh = [];
     for (var i = 0; i < pts.length; i++) {
-      var p = toLocal(pts[i]);
+      var q = pts[i];
+      var qt = q.timeStamp;
+      if (typeof qt === 'number' && typeof lastT === 'number') {
+        if (qt < lastT) { dropped++; continue; }
+        if (qt === lastT && q.clientX === lastPX && q.clientY === lastPY) { dropped++; continue; }
+      } else if (q.clientX === lastPX && q.clientY === lastPY) {
+        dropped++; continue;
+      }
+      fresh.push(q);
+      if (typeof qt === 'number') lastT = qt;
+      lastPX = q.clientX; lastPY = q.clientY;
+    }
+    if (fresh.length === 0) return;
+
+    // ①②③ は 240Hz の全サンプルを使う
+    for (var i = 0; i < fresh.length; i++) {
+      var p = toLocal(fresh[i]);
       stepA(p); stepB(p); stepC(p);
       totalPts++;
     }
     // ④ だけは、まとめて届いた点を捨てて1点しか使わない
-    stepD(toLocal(e));
+    stepD(toLocal(fresh[fresh.length - 1]));
 
     stat.textContent = 'イベント ' + totalEvents + ' 回 / 点 ' + totalPts +
-                       ' 個（1イベントあたり ' + (totalPts / totalEvents).toFixed(2) + ' 点）';
+                       ' 個（1イベントあたり ' + (totalPts / totalEvents).toFixed(2) + ' 点）' +
+                       ' / 再配信を除外 ' + dropped + ' 点';
   });
 
   ['pointerup', 'pointercancel'].forEach(function (t) {
