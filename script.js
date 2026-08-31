@@ -265,7 +265,7 @@ class GlobalHandwritingCanvas {
   }
 
   getPointerPos(e) {
-    return { x: e.clientX, y: e.clientY };
+    return { x: e.clientX, y: e.clientY, t: e.timeStamp };
   }
 
   // --- パームリジェクション ---
@@ -352,6 +352,7 @@ class GlobalHandwritingCanvas {
       pointerId: e.pointerId,
       pointerType: e.pointerType,
       lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
+      lastT: pos.t,                 // 直前のサンプル点の時刻（再配信の検出用）
       midX: pos.x, midY: pos.y      // 直前に通過した中点（曲線の描き始め）
     };
     // ボタンの上をペンが通っても入力が途切れないよう、
@@ -412,6 +413,19 @@ class GlobalHandwritingCanvas {
   // 「直前の点を制御点、隣り合う2点の中点を通過点」とする2次ベジェ曲線でつなぐ。
   extendStroke(pos) {
     const s = this.stroke;
+
+    // Safari は同じ pointermove を2回発火させ、getCoalescedEvents() が
+    // まったく同じ点の並びを返してくることがある（実機で確認）。
+    // そのまま繋ぐと、2回目の先頭で数点ぶん巻き戻る直線が引かれ、
+    // 滑らかな線とは別に「数点飛ばしのカクカクした線」が重なって見える。
+    // 時刻が進んでいない点は再配信とみなして捨てる。
+    if (typeof pos.t === 'number' && typeof s.lastT === 'number') {
+      if (pos.t < s.lastT) return;
+      if (pos.t === s.lastT && pos.x === s.lastX && pos.y === s.lastY) return;
+    } else if (pos.x === s.lastX && pos.y === s.lastY) {
+      return;   // 時刻が取れない場合は、座標が完全に同じものだけ捨てる
+    }
+
     const midX = (s.lastX + pos.x) / 2;
     const midY = (s.lastY + pos.y) / 2;
 
@@ -424,6 +438,7 @@ class GlobalHandwritingCanvas {
     s.midY = midY;
     s.lastX = pos.x;
     s.lastY = pos.y;
+    if (typeof pos.t === 'number') s.lastT = pos.t;
   }
 
   stopDrawing(e) {
