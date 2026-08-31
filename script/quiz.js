@@ -186,7 +186,6 @@ function startLearning(problemData) {
   userHasDrawn = {}; 
   wrongQuestions = [];
   answeredThisSession = {};
-  isFirstRound = true;
 
   switchPhase('test');
 }
@@ -381,19 +380,17 @@ function goToNextReviewItem() {
 }
 
 // --- ラウンド判定・ループ処理 ---
+// 間違えた問題を正解するまで繰り返し、終わったら次へ進む。
+//
+// 以前は、間違いを全部つぶした後もう一度その束を最初から解き直していた。
+// 20問やるつもりが最後にもう20問積まれることになり、
+// 空いた時間で区切って使うという目的と衝突するため取りやめた。
 function evaluateRoundResult() {
   if (wrongQuestions.length > 0) {
     currentList = [...wrongQuestions];
-    isFirstRound = false;
     switchPhase('test');
   } else {
-    if (isFirstRound) {
-      goToNextGroupOrFinish();
-    } else {
-      currentList = [...studyGroups[currentGroupIndex]];
-      isFirstRound = true;
-      switchPhase('test');
-    }
+    goToNextGroupOrFinish();
   }
 }
 
@@ -401,7 +398,6 @@ function goToNextGroupOrFinish() {
   currentGroupIndex++;
   if (currentGroupIndex < studyGroups.length) {
     currentList = [...studyGroups[currentGroupIndex]];
-    isFirstRound = true;
     switchPhase('test');
   } else {
     transitionPhase(() => switchPhase('import'));

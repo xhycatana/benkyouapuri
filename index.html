@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.3.0">
+  <link rel="stylesheet" href="style.css?v=6.4.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -174,7 +174,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.3.0</span>
+              <span class="cursor-default select-none font-mono">v6.4.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -432,7 +432,7 @@
           <p class="pl-3">問題ファイル（1ファイル完結型JSONまたはCSV）をドラッグ＆ドロップしてください。</p>
           
           <p class="font-bold">2. 長期記憶アルゴリズム ＋ 短期記憶ループ</p>
-          <p class="pl-3">インポートされたデータから最後に解いてからの経過時間から「いま思い出せる確率」を忘却曲線で見積もり、確率の低い問題から優先的に出題します。正解するほど復習の間隔が延び、間違えるとすぐ戻ってきます。グループ分割ループ学習により全問正解するまで短期記憶へ叩き込みます（このループ内の繰り返しは、長期記憶の記録には数えません）。</p>
+          <p class="pl-3">インポートされたデータから最後に解いてからの経過時間から「いま思い出せる確率」を忘却曲線で見積もり、確率の低い問題から優先的に出題します。正解するほど復習の間隔が延び、間違えるとすぐ戻ってきます。間違えた問題は、正解するまでその場で繰り返し出題されます（この繰り返しは、長期記憶の記録には数えません）。</p>
         </div>
       </div>
       <div class="flex justify-end pt-4 border-t border-slate-100 mt-2">
@@ -443,16 +443,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.3.0"></script>
-  <script src="script/dom.js?v=6.3.0"></script>
-  <script src="script/util.js?v=6.3.0"></script>
-  <script src="script/memory.js?v=6.3.0"></script>
-  <script src="script/api.js?v=6.3.0"></script>
-  <script src="script/progress.js?v=6.3.0"></script>
-  <script src="script/canvas.js?v=6.3.0"></script>
-  <script src="script/quiz.js?v=6.3.0"></script>
-  <script src="script/library.js?v=6.3.0"></script>
-  <script src="script/upload.js?v=6.3.0"></script>
-  <script src="script/app.js?v=6.3.0"></script>
+  <script src="script/state.js?v=6.4.0"></script>
+  <script src="script/dom.js?v=6.4.0"></script>
+  <script src="script/util.js?v=6.4.0"></script>
+  <script src="script/memory.js?v=6.4.0"></script>
+  <script src="script/api.js?v=6.4.0"></script>
+  <script src="script/progress.js?v=6.4.0"></script>
+  <script src="script/canvas.js?v=6.4.0"></script>
+  <script src="script/quiz.js?v=6.4.0"></script>
+  <script src="script/library.js?v=6.4.0"></script>
+  <script src="script/upload.js?v=6.4.0"></script>
+  <script src="script/app.js?v=6.4.0"></script>
 </body>
 </html>
