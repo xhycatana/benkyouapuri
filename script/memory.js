@@ -6,11 +6,14 @@
 const STORAGE_KEY_MEMORY = 'flashmemo_memorySettings';
 const FIRST_INTERVAL_DAYS = 1.0;   // 初めて正解したときの寿命
 
+// 歯車の中の設定。一度決めたら普段は変えないものを置く。
+// ホーム画面に残す「出題する上限」は、空いた時間の長さで毎回変わるので別扱い。
 let memorySettings = {
   ease: 2.5,          // 正解したとき寿命を何倍にするか
   lapseKeep: 0.2,     // 間違えたとき、以前の寿命をどれだけ残すか
   failMinutes: 30,    // 間違えたときの寿命の下限（分）
-  lockMinutes: 30     // 直前に解いた問題を出題対象から外す時間
+  lockMinutes: 30,    // 直前に解いた問題を出題対象から外す時間
+  groupSize: 0        // 何問ずつに区切るか（長時間の勉強用）。0 で区切らない
 };
 
 try {
@@ -128,6 +131,12 @@ setupSlider('lock-input', 'lock-val', val => {
   return val + ' 分';
 });
 
+// 区切りの数はつまみではなく数値入力なので、個別に受け取る
+inputGroupSize.addEventListener('input', function () {
+  memorySettings.groupSize = Math.max(0, parseInt(inputGroupSize.value, 10) || 0);
+  saveMemorySettings();
+});
+
 // 保存してある設定をつまみと表示に反映する
 function applyMemorySettingsToUI() {
   const pairs = [
@@ -136,6 +145,8 @@ function applyMemorySettingsToUI() {
     ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分'],
     ['lock-input', 'lock-val', memorySettings.lockMinutes, ' 分']
   ];
+  inputGroupSize.value = memorySettings.groupSize;
+
   pairs.forEach(function (p) {
     const input = document.getElementById(p[0]);
     const label = document.getElementById(p[1]);
