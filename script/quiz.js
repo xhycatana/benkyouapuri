@@ -157,10 +157,11 @@ function startLearning(problemData) {
     };
   });
 
-  // 長期記憶アルゴリズムによる優先順選出またはランダム
+  // どの問題を出すかを決める
   if (shouldSrsSort) {
     originalList = sortQuestionsBySrs(originalList);
   } else if (shouldShuffle) {
+    // 優先選出を使わない場合は、どれを選ぶかをここで無作為にする
     originalList = shuffleArray(originalList);
   }
 
@@ -168,6 +169,13 @@ function startLearning(problemData) {
   // 短い時間しか無いときでも、いま最も価値の高い問題から解けるようにするための設定。
   if (settingQuestionLimit > 0 && originalList.length > settingQuestionLimit) {
     originalList = originalList.slice(0, settingQuestionLimit);
+  }
+
+  // 出す問題が決まった後で、その中の順番だけを入れ替える。
+  // 選出より前に混ぜると「優先度の高い問題を選ぶ」こと自体が壊れる。
+  // 毎回同じ並びだと、内容ではなく順番を覚えてしまうので、それを避けるための設定。
+  if (shouldShuffle) {
+    originalList = shuffleArray(originalList);
   }
 
   studyGroups = [];
