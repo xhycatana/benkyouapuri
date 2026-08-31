@@ -41,6 +41,7 @@ const checkSrsSort = document.getElementById('check-srs-sort');
 const checkRandom = document.getElementById('check-random');
 const checkSwap = document.getElementById('check-swap');
 const inputGroupSize = document.getElementById('input-group-size');
+const inputQuestionLimit = document.getElementById('input-question-limit');
 
 const btnUseSample = document.getElementById('btn-use-sample');
 const btnToggleExample = document.getElementById('btn-toggle-example');

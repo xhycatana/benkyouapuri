@@ -16,6 +16,7 @@ let isTransitioning = false;
 let isBlanked = false;     // 切り替えガード
 
 let settingGroupSize = 0;      // ループ分割数
+let settingQuestionLimit = 0;  // 出題する上限。0 なら全部
 let studyGroups = [];          // グループ配列
 let currentGroupIndex = 0;     // 現在のグループ番号
 

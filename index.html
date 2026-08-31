@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.2.0">
+  <link rel="stylesheet" href="style.css?v=6.3.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -109,6 +109,17 @@
               </label>
             </div>
             <div class="flex items-center justify-between text-xs">
+              <div>
+                <span class="font-bold text-slate-700">出題する上限</span>
+                <p class="text-[10px] text-slate-400">優先度の高い順に、この数だけ解きます（0で全部）</p>
+              </div>
+              <div class="flex items-center space-x-2">
+                <input type="number" id="input-question-limit" value="0" min="0" class="w-16 p-1 border border-black text-center focus:outline-none font-bold" title="出題数の上限">
+                <span class="text-slate-400">問まで</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs">
               <span class="font-bold text-slate-700">何問ずつに分割してループ学習するか</span>
               <div class="flex items-center space-x-2">
                 <input type="number" id="input-group-size" value="0" min="0" class="w-16 p-1 border border-black text-center focus:outline-none font-bold" title="分割問題数">
@@ -163,7 +174,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.2.0</span>
+              <span class="cursor-default select-none font-mono">v6.3.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -432,16 +443,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.2.0"></script>
-  <script src="script/dom.js?v=6.2.0"></script>
-  <script src="script/util.js?v=6.2.0"></script>
-  <script src="script/memory.js?v=6.2.0"></script>
-  <script src="script/api.js?v=6.2.0"></script>
-  <script src="script/progress.js?v=6.2.0"></script>
-  <script src="script/canvas.js?v=6.2.0"></script>
-  <script src="script/quiz.js?v=6.2.0"></script>
-  <script src="script/library.js?v=6.2.0"></script>
-  <script src="script/upload.js?v=6.2.0"></script>
-  <script src="script/app.js?v=6.2.0"></script>
+  <script src="script/state.js?v=6.3.0"></script>
+  <script src="script/dom.js?v=6.3.0"></script>
+  <script src="script/util.js?v=6.3.0"></script>
+  <script src="script/memory.js?v=6.3.0"></script>
+  <script src="script/api.js?v=6.3.0"></script>
+  <script src="script/progress.js?v=6.3.0"></script>
+  <script src="script/canvas.js?v=6.3.0"></script>
+  <script src="script/quiz.js?v=6.3.0"></script>
+  <script src="script/library.js?v=6.3.0"></script>
+  <script src="script/upload.js?v=6.3.0"></script>
+  <script src="script/app.js?v=6.3.0"></script>
 </body>
 </html>

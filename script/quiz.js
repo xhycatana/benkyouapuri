@@ -136,6 +136,7 @@ function startLearning(problemData) {
   const shouldShuffle = checkRandom.checked;
   const shouldSwap = checkSwap.checked;
   settingGroupSize = Math.max(0, parseInt(inputGroupSize.value) || 0);
+  settingQuestionLimit = Math.max(0, parseInt(inputQuestionLimit.value) || 0);
 
   // 表裏（問題と答え）の入れ替え
   originalList = problemData.map(item => {
@@ -161,6 +162,12 @@ function startLearning(problemData) {
     originalList = sortQuestionsBySrs(originalList);
   } else if (shouldShuffle) {
     originalList = shuffleArray(originalList);
+  }
+
+  // 並べ替えた後に上位だけ残す。順番を決める前に切ると、優先度と無関係な問題が選ばれてしまう。
+  // 短い時間しか無いときでも、いま最も価値の高い問題から解けるようにするための設定。
+  if (settingQuestionLimit > 0 && originalList.length > settingQuestionLimit) {
+    originalList = originalList.slice(0, settingQuestionLimit);
   }
 
   studyGroups = [];
