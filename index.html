@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.1.0">
+  <link rel="stylesheet" href="style.css?v=6.1.1">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -76,11 +76,11 @@
       </div>
     </header>
 
-    <main class="flex-grow flex items-center justify-center py-4 w-full">
-      <div class="w-full h-full flex flex-col justify-center max-w-4xl pl-10 pr-2 md:pl-12 md:pr-4"> 
+    <main class="flex-grow min-h-0 flex items-center justify-center py-4 w-full">
+      <div id="phase-container" class="w-full h-full flex flex-col justify-center max-w-4xl pl-10 pr-2 md:pl-12 md:pr-4"> 
 
         <!-- インポート・設定画面 (Phase Import) -->
-        <section id="phase-import" class="space-y-6 pointer-events-auto w-full mx-auto max-w-lg">
+        <section id="phase-import" class="space-y-6 pointer-events-auto w-full mx-auto my-auto max-w-lg">
           <div class="text-center space-y-2 mb-6">
             <h2 class="text-2xl font-bold text-slate-850 tracking-tight">暗記アプリケーション</h2>
             <p class="text-xs text-slate-400">長期記憶アルゴリズム ＋ 短期記憶ループ学習</p>
@@ -163,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.1.0</span>
+              <span class="cursor-default select-none font-mono">v6.1.1</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -175,7 +175,7 @@
         </section>
 
         <!-- 問題集の追加 (Phase Upload) -->
-        <section id="phase-upload" class="hidden space-y-4 pointer-events-auto w-full mx-auto max-w-lg">
+        <section id="phase-upload" class="hidden space-y-4 pointer-events-auto w-full mx-auto my-auto max-w-lg">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-bold text-slate-800">問題集を追加</h2>
             <button id="btn-upload-back" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">戻る</button>
@@ -432,6 +432,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=6.1.0"></script>
+  <script src="script.js?v=6.1.1"></script>
 </body>
 </html>

@@ -89,6 +89,7 @@ const phaseImport = document.getElementById('phase-import');
 const phaseTest = document.getElementById('phase-test');
 const phaseReview = document.getElementById('phase-review');
 const phaseUpload = document.getElementById('phase-upload');
+const phaseContainer = document.getElementById('phase-container');
 
 const libraryTags = document.getElementById('library-tags');
 const libraryTree = document.getElementById('library-tree');
@@ -608,6 +609,14 @@ function shuffleArray(array) {
 // --- フェーズ切り替え ---
 function switchPhase(newPhase) {
   currentPhase = newPhase;
+
+  // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
+  // 解答中は画面全体が手書きの領域なので、固定したままにする。
+  // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
+  const scrollable = (newPhase === 'import' || newPhase === 'upload');
+  phaseContainer.classList.toggle('overflow-y-auto', scrollable);
+  phaseContainer.classList.toggle('pointer-events-auto', scrollable);
+  phaseContainer.classList.toggle('justify-center', !scrollable);
   
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
