@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>二重描画の診断</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, 'Noto Sans JP', sans-serif; margin: 0;
+         background: #fff; color: #1e293b; -webkit-user-select: none; user-select: none;
+         display: flex; flex-direction: column; }
+  header { padding: 8px 10px; border-bottom: 1px solid #cbd5e1; flex: 0 0 auto; }
+  h1 { font-size: 13px; margin: 0 0 4px; }
+  .note { font-size: 11px; color: #64748b; line-height: 1.5; margin: 0 0 6px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { padding: 7px 14px; border: 1px solid #000; background: #fff; font-size: 12px; }
+  #legend { font-size: 11px; font-family: ui-monospace, monospace; line-height: 1.6; margin-top: 6px; }
+  .sw { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; margin-right: 4px; border: 1px solid #94a3b8; }
+  #wrap { flex: 1 1 auto; position: relative; min-height: 0; }
+  #pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+         touch-action: none; background: #fff; }
+  #verdict { font-size: 12px; font-weight: 700; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>二重描画の診断</h1>
+  <p class="note">
+    下の白い部分に <b>いつもどおり文字を書いてください</b>（2本に見える現象が出るまで）。<br>
+    線は <b>pointerId ごとに色を変えて</b>描きます。<b>赤い小さな丸</b>は、まとめて届いた点ではなく
+    イベント本体が示した位置です。
+  </p>
+  <div class="row">
+    <button id="clear">消去してやり直す</button>
+    <span id="stat" style="font-size:11px;color:#64748b"></span>
+  </div>
+  <div id="legend">まだ書かれていません</div>
+  <div id="verdict"></div>
+</header>
+
+<div id="wrap"><canvas id="pad"></canvas></div>
+
+<script>
+(function () {
+  var pad = document.getElementById('pad');
+  var ctx = pad.getContext('2d');
+  var wrap = document.getElementById('wrap');
+  function $(id) { return document.getElementById(id); }
+
+  // pointerId ごとの色。2本の線が別々の色なら「別ポインタが原因」だと一目で分かる。
+  var PALETTE = ['#000000', '#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed'];
+  var colorOf = {};
+  var nextColor = 0;
+
+  var rect = null;
+  function sizePad() {
+    var dpr = window.devicePixelRatio || 1;
+    rect = wrap.getBoundingClientRect();
+    pad.width = rect.width * dpr;
+    pad.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2;
+  }
+  sizePad();
+  window.addEventListener('resize', sizePad);
+
+  var strokes = {};          // pointerId -> { lastX, lastY }
+  var info = {};             // pointerId -> { type, moves, pts, color }
+  var mainOffsetMax = 0;     // イベント本体と、まとめて届いた最後の点とのズレ
+  var concurrent = 0, maxConcurrent = 0;
+
+  function clearAll() {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, pad.width, pad.height);
+    ctx.restore();
+    strokes = {}; info = {}; colorOf = {}; nextColor = 0;
+    mainOffsetMax = 0; concurrent = 0; maxConcurrent = 0;
+    $('legend').textContent = 'まだ書かれていません';
+    $('verdict').textContent = '';
+    $('stat').textContent = '';
+  }
+  $('clear').addEventListener('click', clearAll);
+
+  function colorFor(id) {
+    if (!(id in colorOf)) {
+      colorOf[id] = PALETTE[nextColor % PALETTE.length];
+      nextColor++;
+    }
+    return colorOf[id];
+  }
+
+  function render() {
+    var ids = Object.keys(info);
+    var lines = ids.map(function (id) {
+      var r = info[id];
+      return '<span class="sw" style="background:' + r.color + '"></span>' +
+             'id=' + id + ' / ' + r.type + ' / move ' + r.moves + ' 回 / 点 ' + r.pts + ' 個';
+    });
+    $('legend').innerHTML = lines.join('<br>') || 'まだ書かれていません';
+    $('stat').textContent = '同時接地 最大 ' + maxConcurrent + ' 個 ／ 本体と点のズレ 最大 ' +
+                            mainOffsetMax.toFixed(1) + ' px';
+
+    var v = '';
+    if (ids.length > 1) {
+      v = '判定: pointerId が ' + ids.length + ' 種類あります。色の違う線が2本なら、これが原因です。';
+    } else if (ids.length === 1 && mainOffsetMax > 8) {
+      v = '判定: ポインタは1つですが、イベント本体と点の位置が最大 ' +
+          mainOffsetMax.toFixed(1) + 'px ずれています。座標系の不一致が原因です。';
+    } else if (ids.length === 1) {
+      v = '判定: ポインタは1つ、座標のズレもなし。原因は入力側ではありません。';
+    }
+    $('verdict').textContent = v;
+  }
+
+  function local(ev) {
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+
+  pad.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    rect = wrap.getBoundingClientRect();   // 毎回取り直してズレを防ぐ
+    var p = local(e);
+    strokes[e.pointerId] = { lastX: p.x, lastY: p.y };
+    if (!info[e.pointerId]) {
+      info[e.pointerId] = { type: e.pointerType, moves: 0, pts: 0, color: colorFor(e.pointerId) };
+    }
+    concurrent++;
+    if (concurrent > maxConcurrent) maxConcurrent = concurrent;
+    render();
+    // あえて setPointerCapture しない。素の状態で何が起きているかを見るため。
+  });
+
+  pad.addEventListener('pointermove', function (e) {
+    var s = strokes[e.pointerId];
+    if (!s) return;
+    e.preventDefault();
+    rect = wrap.getBoundingClientRect();
+
+    var rec = info[e.pointerId];
+    rec.moves++;
+
+    var pts = null;
+    if (e.getCoalescedEvents) { try { pts = e.getCoalescedEvents(); } catch (err) { pts = null; } }
+    if (!pts || pts.length === 0) pts = [e];
+
+    ctx.strokeStyle = rec.color;
+    ctx.lineWidth = 2;
+
+    var lastP = null;
+    for (var i = 0; i < pts.length; i++) {
+      var p = local(pts[i]);
+      ctx.beginPath();
+      ctx.moveTo(s.lastX, s.lastY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      s.lastX = p.x; s.lastY = p.y;
+      rec.pts++;
+      lastP = p;
+    }
+
+    // イベント本体が示す位置に赤い丸を打つ。
+    // まとめて届いた点と座標系が食い違っていれば、丸だけが線から外れる。
+    var m = local(e);
+    if (lastP) {
+      var d = Math.sqrt((m.x - lastP.x) * (m.x - lastP.x) + (m.y - lastP.y) * (m.y - lastP.y));
+      if (d > mainOffsetMax) mainOffsetMax = d;
+    }
+    ctx.fillStyle = '#e11d48';
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    render();
+  });
+
+  ['pointerup', 'pointercancel'].forEach(function (t) {
+    window.addEventListener(t, function (e) {
+      if (strokes[e.pointerId]) {
+        delete strokes[e.pointerId];
+        concurrent = Math.max(0, concurrent - 1);
+        render();
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>

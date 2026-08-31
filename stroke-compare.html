@@ -284,6 +284,8 @@
   cvs[0].addEventListener('pointermove', function (e) {
     if (!drawing) return;
     e.preventDefault();
+    // 書いている途中でページがスクロールすると位置がずれるので、毎回取り直す
+    rect0 = cvs[0].getBoundingClientRect();
     totalEvents++;
     notePointer(e, 'moves');
 
