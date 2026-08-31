@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=5.4.0">
+  <link rel="stylesheet" href="style.css?v=5.4.1">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -163,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v5.4.0</span>
+              <span class="cursor-default select-none font-mono">v5.4.1</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -194,8 +194,14 @@
               <span class="text-[10px] text-slate-400">カンマ区切り。問題集ごとに付きます</span>
             </label>
 
-            <label class="block">
+            <div class="flex items-center justify-between">
               <span class="font-bold text-slate-700">問題（CSV）</span>
+              <button id="btn-upload-file" class="px-2 py-1 border border-black text-[10px] font-bold hover:bg-slate-50 focus:outline-none">
+                ファイルから読み込む
+              </button>
+              <input type="file" id="upload-file" accept=".csv,.txt,text/csv,text/plain" class="hidden">
+            </div>
+            <label class="block">
               <textarea id="upload-csv" rows="8" class="mt-1 w-full p-2 border border-black font-mono text-[11px] focus:outline-none" placeholder="ルイ16世,フランス革命期の国王,1793年に処刑された"></textarea>
               <span class="text-[10px] text-slate-400">1列目:問題 2列目:答え 3列目:解説（任意）</span>
             </label>
@@ -405,6 +411,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=5.4.0"></script>
+  <script src="script.js?v=5.4.1"></script>
 </body>
 </html>

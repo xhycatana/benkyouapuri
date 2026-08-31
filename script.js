@@ -89,6 +89,8 @@ const uploadCsv = document.getElementById('upload-csv');
 const uploadPreview = document.getElementById('upload-preview');
 const uploadMessage = document.getElementById('upload-message');
 const btnUploadBack = document.getElementById('btn-upload-back');
+const uploadFile = document.getElementById('upload-file');
+const btnUploadFile = document.getElementById('btn-upload-file');
 const btnUploadSave = document.getElementById('btn-upload-save');
 
 const passphraseModal = document.getElementById('passphrase-modal');
@@ -1313,6 +1315,29 @@ function updateUploadPreview() {
 
 uploadCsv.addEventListener('input', updateUploadPreview);
 uploadPath.addEventListener('input', updateUploadPreview);
+
+// CSV はファイルからも読み込めるようにする。
+// iPad では「ファイル」アプリが開くので、Gemini の出力を保存しておけばそのまま選べる。
+btnUploadFile.addEventListener('click', function () { uploadFile.click(); });
+
+uploadFile.addEventListener('change', async function (e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  try {
+    uploadCsv.value = await file.text();
+    // 保存先が空なら、ファイル名（拡張子を除く）を初期値として入れておく
+    if (!uploadPath.value.trim()) {
+      uploadPath.value = file.name.replace(/\.[^.]+$/, '');
+    }
+    uploadMessage.className = 'text-xs text-slate-500';
+    uploadMessage.textContent = file.name + ' を読み込みました。';
+  } catch (err) {
+    uploadMessage.className = 'text-xs text-red-600';
+    uploadMessage.textContent = 'ファイルを読めませんでした: ' + err.message;
+  }
+  uploadFile.value = '';   // 同じファイルを続けて選べるようにする
+  updateUploadPreview();
+});
 
 async function saveUpload(overwrite) {
   const rows = parseCSV(uploadCsv.value);
