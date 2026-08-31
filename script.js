@@ -1,10 +1,22 @@
-// --- 1. アルゴリズム重み & パラメーター ---
-let algorithmWeights = {
-  w1: 1.2,
-  w2: 1.5,
-  w3: 0.8,
-  lockMinutes: 30
+// --- 1. 記憶モデルのパラメーター ---
+// 忘却曲線 R = exp(-経過日数 / 記憶の寿命) で、いま思い出せる確率を見積もる。
+const STORAGE_KEY_MEMORY = 'flashmemo_memorySettings';
+const FIRST_INTERVAL_DAYS = 1.0;   // 初めて正解したときの寿命
+
+let memorySettings = {
+  ease: 2.5,          // 正解したとき寿命を何倍にするか
+  failMinutes: 30,    // 間違えたとき寿命を何分に戻すか
+  lockMinutes: 30     // 直前に解いた問題を出題対象から外す時間
 };
+
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_MEMORY) || 'null');
+  if (saved && typeof saved === 'object') Object.assign(memorySettings, saved);
+} catch (err) {}
+
+function saveMemorySettings() {
+  try { localStorage.setItem(STORAGE_KEY_MEMORY, JSON.stringify(memorySettings)); } catch (err) {}
+}
 
 // --- 2. グローバルデータストア ---
 let originalList = [];        // 読み込まれた全データ（JSON構造拡張版）
@@ -13,6 +25,7 @@ let userAnswers = {};         // 手書き画像キャッシュ
 let userHasDrawn = {};        // 描画フラグ
 let wrongQuestions = [];       // 間違えた問題リスト
 
+let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）
 let isFirstRound = true;       // 初回ラウンドか
 let currentPhase = 'import';   // 'import', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
@@ -169,33 +182,25 @@ function generateUUID() {
   });
 }
 
-// --- 3. 改良版ロジスティック回帰アルゴリズム ---
+// --- 3. 忘却曲線による記憶予測 ---
+// いま思い出せる確率を R = exp(-経過日数 / 記憶の寿命) で見積もる。
+// 時間が経つほど必ず下がるので、どれだけ習熟した問題でも寿命を過ぎれば戻ってくる。
+// 正解数を足し込む方式では、熟達した問題が頭打ちになって二度と出題されなかった。
 function calculateProbability(q) {
-  const now = new Date();
-  let elapsedDays = 0;
+  // 一度も解いていない問題は、思い出せるはずがないので最優先
+  if (!q.last_answered_at) return 0;
 
-  if (q.last_answered_at) {
-    const lastDate = new Date(q.last_answered_at);
-    const diffMs = Math.max(0, now - lastDate);
-    elapsedDays = diffMs / (1000 * 60 * 60 * 24);
-  }
+  const lifespan = (q.lifespan > 0) ? q.lifespan : FIRST_INTERVAL_DAYS;
+  const elapsedMs = Math.max(0, Date.now() - Date.parse(q.last_answered_at));
+  const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24);
 
-  const lifespan = q.lifespan || 1.0;
-  const w1 = algorithmWeights.w1;
-  const w2 = algorithmWeights.w2;
-  const w3 = algorithmWeights.w3;
-
-  const fx = (w1 * (q.correct_count || 0)) 
-           - (w2 * (q.incorrect_count || 0)) 
-           - (w3 * (elapsedDays / lifespan));
-
-  const p = 1 / (1 + Math.exp(-fx));
-  return Math.min(Math.max(p, 0.001), 0.999);
+  const r = Math.exp(-elapsedDays / lifespan);
+  return Math.min(Math.max(r, 0), 1);
 }
 
 function sortQuestionsBySrs(list) {
   const now = new Date();
-  const lockMs = algorithmWeights.lockMinutes * 60 * 1000;
+  const lockMs = memorySettings.lockMinutes * 60 * 1000;
 
   // 時間ロックフィルタリング
   const nonLocked = list.filter(q => {
@@ -762,6 +767,7 @@ function startLearning(problemData) {
   userAnswers = {};
   userHasDrawn = {}; 
   wrongQuestions = [];
+  answeredThisSession = {};
   isFirstRound = true;
 
   switchPhase('test');
@@ -915,15 +921,29 @@ function showReviewItem() {
   }
 }
 
-// 自己採点時（⭕/❌）に長期記憶パラメーターを自動更新
+// 自己採点時（⭕/❌）に記憶の寿命を更新する。
+//
+// 同じセッション内で二度目以降に解いた問題は更新しない。
+// 間違えた問題はその場のループで必ずもう一度出題されるため、
+// そこでの正解まで数えると「数分間覚えていただけ」を長期記憶と誤認してしまう。
+// 記録するのは、そのセッションで最初に答えた結果だけ。
 function updateSrsMetrics(question, isCorrect) {
+  if (answeredThisSession[question.id]) return;
+  answeredThisSession[question.id] = true;
+
   if (isCorrect) {
     question.correct_count = (question.correct_count || 0) + 1;
-    question.lifespan = (question.lifespan || 1.0) * 1.5;
+    const previous = question.lifespan;
+    // 正解したら、少なくとも初回間隔ぶんは空ける
+    question.lifespan = (previous > 0 && question.last_answered_at)
+      ? Math.max(previous * memorySettings.ease, FIRST_INTERVAL_DAYS)
+      : FIRST_INTERVAL_DAYS;
   } else {
     question.incorrect_count = (question.incorrect_count || 0) + 1;
-    question.lifespan = Math.max(1.0, (question.lifespan || 1.0) * 0.5);
+    // 間違えたら寿命を数十分まで戻す。次に開いたとき最優先で出てくる
+    question.lifespan = memorySettings.failMinutes / (60 * 24);
   }
+
   question.last_answered_at = new Date().toISOString();
   recordProgress(question);
 }
@@ -1038,13 +1058,36 @@ function setupSlider(inputId, valId, callback) {
   });
 }
 
-setupSlider('w1-input', 'w1-val', val => algorithmWeights.w1 = parseFloat(val));
-setupSlider('w2-input', 'w2-val', val => algorithmWeights.w2 = parseFloat(val));
-setupSlider('w3-input', 'w3-val', val => algorithmWeights.w3 = parseFloat(val));
-setupSlider('lock-input', 'lock-val', val => {
-  algorithmWeights.lockMinutes = parseInt(val);
-  return `${val}分`;
+setupSlider('ease-input', 'ease-val', val => {
+  memorySettings.ease = parseFloat(val);
+  saveMemorySettings();
+  return val + ' 倍';
 });
+setupSlider('fail-input', 'fail-val', val => {
+  memorySettings.failMinutes = parseInt(val, 10);
+  saveMemorySettings();
+  return val + ' 分後';
+});
+setupSlider('lock-input', 'lock-val', val => {
+  memorySettings.lockMinutes = parseInt(val, 10);
+  saveMemorySettings();
+  return val + ' 分';
+});
+
+// 保存してある設定をつまみと表示に反映する
+function applyMemorySettingsToUI() {
+  const pairs = [
+    ['ease-input', 'ease-val', memorySettings.ease, ' 倍'],
+    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分後'],
+    ['lock-input', 'lock-val', memorySettings.lockMinutes, ' 分']
+  ];
+  pairs.forEach(function (p) {
+    const input = document.getElementById(p[0]);
+    const label = document.getElementById(p[1]);
+    if (input) input.value = p[2];
+    if (label) label.textContent = p[2] + p[3];
+  });
+}
 
 
 
@@ -1581,6 +1624,7 @@ btnResetZoom.addEventListener('click', function () {
 window.onload = function() {
   switchPhase('import');
   globalCanvas.resizeCanvas();
+  applyMemorySettingsToUI();
   watchZoom();
   loadLibrary();
 };
