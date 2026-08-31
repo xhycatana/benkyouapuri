@@ -74,6 +74,27 @@ const appBody = document.getElementById('app-body');
 const phaseImport = document.getElementById('phase-import');
 const phaseTest = document.getElementById('phase-test');
 const phaseReview = document.getElementById('phase-review');
+const phaseUpload = document.getElementById('phase-upload');
+
+const libraryTags = document.getElementById('library-tags');
+const libraryTree = document.getElementById('library-tree');
+const librarySelected = document.getElementById('library-selected');
+const btnLibraryReload = document.getElementById('btn-library-reload');
+const btnOpenUpload = document.getElementById('btn-open-upload');
+const btnStartSelected = document.getElementById('btn-start-selected');
+
+const uploadPath = document.getElementById('upload-path');
+const uploadTags = document.getElementById('upload-tags');
+const uploadCsv = document.getElementById('upload-csv');
+const uploadPreview = document.getElementById('upload-preview');
+const uploadMessage = document.getElementById('upload-message');
+const btnUploadBack = document.getElementById('btn-upload-back');
+const btnUploadSave = document.getElementById('btn-upload-save');
+
+const passphraseModal = document.getElementById('passphrase-modal');
+const passphraseInput = document.getElementById('passphrase-input');
+const passphraseError = document.getElementById('passphrase-error');
+const btnPassphraseSave = document.getElementById('btn-passphrase-save');
 const leftControlsContainer = document.getElementById('left-controls-container');
 
 const dropZone = document.getElementById('drop-zone');
@@ -191,6 +212,11 @@ function sortQuestionsBySrs(list) {
   return scored.map(s => s.item);
 }
 
+// 手書きを受け付けるのは出題中と丸付け中だけ
+function isDrawingPhase() {
+  return currentPhase === 'test' || currentPhase === 'review';
+}
+
 // --- 4. 全画面手書きキャンバス操作クラス ---
 class GlobalHandwritingCanvas {
   constructor(canvasElement) {
@@ -211,10 +237,10 @@ class GlobalHandwritingCanvas {
     window.addEventListener('pointercancel', (e) => this.stopDrawing(e));
 
     this.canvas.addEventListener('touchstart', (e) => {
-      if (currentPhase !== 'import' && !isTransitioning) e.preventDefault();
+      if (isDrawingPhase() && !isTransitioning) e.preventDefault();
     }, { passive: false });
     this.canvas.addEventListener('touchmove', (e) => {
-      if (currentPhase !== 'import' && !isTransitioning) e.preventDefault();
+      if (isDrawingPhase() && !isTransitioning) e.preventDefault();
     }, { passive: false });
 
     this.resizeTimeout = null;
@@ -355,7 +381,7 @@ class GlobalHandwritingCanvas {
   }
 
   startDrawing(e) {
-    if (currentPhase === 'import' || isTransitioning) return;
+    if (!isDrawingPhase() || isTransitioning) return;
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
     e.preventDefault();
@@ -369,7 +395,7 @@ class GlobalHandwritingCanvas {
   }
 
   draw(e) {
-    if (currentPhase === 'import' || isTransitioning) return;
+    if (!isDrawingPhase() || isTransitioning) return;
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
 
@@ -573,6 +599,7 @@ function switchPhase(newPhase) {
   currentPhase = newPhase;
   
   phaseImport.classList.add('hidden');
+  phaseUpload.classList.add('hidden');
   phaseTest.classList.add('hidden');
   phaseReview.classList.add('hidden');
 
@@ -581,6 +608,10 @@ function switchPhase(newPhase) {
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
     globalCanvas.resetPalmRejection();
+  } else if (newPhase === 'upload') {
+    phaseUpload.classList.remove('hidden');
+    leftControlsContainer.classList.add('hidden');
+    globalCanvas.clear();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
@@ -1002,7 +1033,338 @@ setupSlider('lock-input', 'lock-val', val => {
   return `${val}分`;
 });
 
+
+// --- 6. 問題集ライブラリ（非公開リポジトリから読み書きする） -----------------
+// 通信はすべて /api/questions を経由する。GitHub のトークンはサーバー側にしかなく、
+// ブラウザが持つのは合言葉だけ。
+
+const STORAGE_KEY_PASSPHRASE = 'flashmemo_passphrase';
+
+let libraryIndex = { sets: [] };
+let selectedPaths = [];       // 選択中の問題集のパス
+let activeTags = [];          // 絞り込みに使っているタグ
+let closedFolders = {};       // 閉じているフォルダ（既定は開いた状態）
+
+function getPassphrase() {
+  try { return localStorage.getItem(STORAGE_KEY_PASSPHRASE) || ''; } catch (err) { return ''; }
+}
+function savePassphrase(v) {
+  try { localStorage.setItem(STORAGE_KEY_PASSPHRASE, v); } catch (err) {}
+}
+
+async function api(path, options) {
+  const opts = Object.assign({}, options || {});
+  opts.headers = Object.assign({ 'x-passphrase': getPassphrase() }, opts.headers || {});
+  const res = await fetch(path, opts);
+
+  let data = {};
+  try { data = await res.json(); } catch (err) {}
+
+  if (res.status === 401) {
+    askPassphrase('合言葉が違います。もう一度入力してください。');
+    const e = new Error('unauthorized');
+    e.unauthorized = true;
+    throw e;
+  }
+  if (!res.ok) {
+    const e = new Error(data.error || ('通信に失敗しました (' + res.status + ')'));
+    e.data = data;
+    throw e;
+  }
+  return data;
+}
+
+// --- 合言葉の入力 ---
+function askPassphrase(message) {
+  passphraseError.textContent = message || '';
+  passphraseError.classList.toggle('hidden', !message);
+  passphraseInput.value = '';
+  passphraseModal.classList.remove('hidden');
+  setTimeout(function () { passphraseInput.focus(); }, 50);
+}
+
+function submitPassphrase() {
+  const v = passphraseInput.value.trim();
+  if (!v) return;
+  savePassphrase(v);
+  passphraseModal.classList.add('hidden');
+  loadLibrary();
+}
+
+btnPassphraseSave.addEventListener('click', submitPassphrase);
+passphraseInput.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') submitPassphrase();
+});
+
+// --- 一覧の読み込み ---
+function setTreeMessage(text, isError) {
+  libraryTree.innerHTML = '';
+  const p = document.createElement('p');
+  p.className = isError ? 'text-[10px] text-red-600' : 'text-[10px] text-slate-400';
+  p.textContent = text;
+  libraryTree.appendChild(p);
+}
+
+async function loadLibrary() {
+  if (!getPassphrase()) {
+    setTreeMessage('合言葉を入力してください。');
+    askPassphrase('');
+    return;
+  }
+  setTreeMessage('読み込み中…');
+  try {
+    const data = await api('/api/questions');
+    libraryIndex = (data && Array.isArray(data.sets)) ? data : { sets: [] };
+    selectedPaths = selectedPaths.filter(function (p) {
+      return libraryIndex.sets.some(function (s) { return s.path === p; });
+    });
+    renderLibrary();
+  } catch (err) {
+    if (!err.unauthorized) setTreeMessage(err.message, true);
+  }
+}
+
+// --- タグ ---
+function allTags() {
+  const seen = {};
+  libraryIndex.sets.forEach(function (s) {
+    (s.tags || []).forEach(function (t) { seen[t] = true; });
+  });
+  return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+}
+
+// タグは絞り込み。複数選ぶと、そのすべてを持つ問題集だけが残る。
+function visibleSets() {
+  if (activeTags.length === 0) return libraryIndex.sets;
+  return libraryIndex.sets.filter(function (s) {
+    const tags = s.tags || [];
+    return activeTags.every(function (t) { return tags.indexOf(t) !== -1; });
+  });
+}
+
+function renderTags() {
+  libraryTags.innerHTML = '';
+  const tags = allTags();
+  tags.forEach(function (t) {
+    const on = activeTags.indexOf(t) !== -1;
+    const b = document.createElement('button');
+    b.className = 'px-2 py-0.5 text-[10px] border focus:outline-none ' +
+      (on ? 'bg-black text-white border-black'
+          : 'bg-white text-slate-500 border-slate-300 hover:border-black');
+    b.textContent = t;
+    b.addEventListener('click', function () {
+      const at = activeTags.indexOf(t);
+      if (at === -1) activeTags.push(t); else activeTags.splice(at, 1);
+      renderLibrary();
+    });
+    libraryTags.appendChild(b);
+  });
+}
+
+// --- ツリー ---
+function buildTree(sets) {
+  const root = { name: '', key: '', folders: [], items: [] };
+  sets.forEach(function (s) {
+    const parts = s.path.split('/');
+    let node = root;
+    let prefix = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      prefix = prefix ? (prefix + '/' + parts[i]) : parts[i];
+      let next = null;
+      for (const f of node.folders) { if (f.name === parts[i]) { next = f; break; } }
+      if (!next) {
+        next = { name: parts[i], key: prefix, folders: [], items: [] };
+        node.folders.push(next);
+      }
+      node = next;
+    }
+    node.items.push(s);
+  });
+  return root;
+}
+
+function renderNode(node, container, depth) {
+  node.folders.forEach(function (f) {
+    const isClosed = closedFolders[f.key] === true;
+
+    const row = document.createElement('button');
+    row.className = 'w-full flex items-center text-left py-0.5 hover:bg-slate-50 focus:outline-none';
+    row.style.paddingLeft = (depth * 12) + 'px';
+
+    const mark = document.createElement('span');
+    mark.className = 'w-4 text-slate-400';
+    mark.textContent = isClosed ? '▸' : '▾';
+
+    const name = document.createElement('span');
+    name.className = 'font-bold text-slate-700';
+    name.textContent = f.name;
+
+    row.appendChild(mark);
+    row.appendChild(name);
+    row.addEventListener('click', function () {
+      closedFolders[f.key] = !isClosed;
+      renderLibrary();
+    });
+    container.appendChild(row);
+
+    if (!isClosed) renderNode(f, container, depth + 1);
+  });
+
+  node.items.forEach(function (s) {
+    const row = document.createElement('label');
+    row.className = 'flex items-center py-0.5 cursor-pointer hover:bg-slate-50';
+    row.style.paddingLeft = (depth * 12 + 16) + 'px';
+
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = selectedPaths.indexOf(s.path) !== -1;
+    box.className = 'mr-2 accent-black';
+    box.addEventListener('change', function () {
+      const at = selectedPaths.indexOf(s.path);
+      if (box.checked) { if (at === -1) selectedPaths.push(s.path); }
+      else if (at !== -1) { selectedPaths.splice(at, 1); }
+      updateSelectionUI();
+    });
+
+    const label = document.createElement('span');
+    label.className = 'text-slate-800';
+    label.textContent = s.title || s.path.split('/').pop();
+
+    const count = document.createElement('span');
+    count.className = 'ml-2 text-[10px] text-slate-400';
+    count.textContent = (s.count || 0) + '問';
+
+    row.appendChild(box);
+    row.appendChild(label);
+    row.appendChild(count);
+    container.appendChild(row);
+  });
+}
+
+function renderLibrary() {
+  renderTags();
+
+  const sets = visibleSets();
+  libraryTree.innerHTML = '';
+
+  if (libraryIndex.sets.length === 0) {
+    setTreeMessage('まだ問題集がありません。「問題集を追加」から登録してください。');
+  } else if (sets.length === 0) {
+    setTreeMessage('このタグに当てはまる問題集はありません。');
+  } else {
+    renderNode(buildTree(sets), libraryTree, 0);
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const chosen = libraryIndex.sets.filter(function (s) {
+    return selectedPaths.indexOf(s.path) !== -1;
+  });
+  const total = chosen.reduce(function (a, s) { return a + (s.count || 0); }, 0);
+  librarySelected.textContent = chosen.length === 0
+    ? '未選択'
+    : (chosen.length + '冊 / ' + total + '問を選択中');
+  btnStartSelected.disabled = chosen.length === 0;
+}
+
+// --- 選択した問題集で開始 ---
+async function startFromSelection() {
+  if (selectedPaths.length === 0) return;
+  btnStartSelected.disabled = true;
+  btnStartSelected.textContent = '読み込み中…';
+  try {
+    let merged = [];
+    for (const p of selectedPaths) {
+      const set = await api('/api/questions?path=' + encodeURIComponent(p));
+      if (Array.isArray(set.questions)) merged = merged.concat(set.questions);
+    }
+    if (merged.length === 0) throw new Error('選んだ問題集に問題が入っていません。');
+    startLearning(merged);
+  } catch (err) {
+    if (!err.unauthorized) alert(err.message);
+  } finally {
+    btnStartSelected.textContent = '選択した問題集で開始';
+    updateSelectionUI();
+  }
+}
+
+btnStartSelected.addEventListener('click', startFromSelection);
+btnLibraryReload.addEventListener('click', loadLibrary);
+
+// --- 問題集の追加 ---
+btnOpenUpload.addEventListener('click', function () {
+  uploadMessage.textContent = '';
+  switchPhase('upload');
+  updateUploadPreview();
+});
+btnUploadBack.addEventListener('click', function () {
+  switchPhase('import');
+});
+
+function updateUploadPreview() {
+  const rows = parseCSV(uploadCsv.value);
+  const path = uploadPath.value.trim();
+  uploadPreview.textContent = rows.length === 0
+    ? '読み取れる問題がありません。'
+    : (rows.length + '問を読み取りました。先頭: ' + rows[0].question + ' → ' + rows[0].answer);
+  btnUploadSave.disabled = (rows.length === 0 || path.length === 0);
+}
+
+uploadCsv.addEventListener('input', updateUploadPreview);
+uploadPath.addEventListener('input', updateUploadPreview);
+
+async function saveUpload(overwrite) {
+  const rows = parseCSV(uploadCsv.value);
+  const path = uploadPath.value.trim();
+  const payload = {
+    path: path,
+    title: path.split('/').pop(),
+    tags: uploadTags.value.split(',').map(function (t) { return t.trim(); }).filter(Boolean),
+    questions: rows.map(function (r) {
+      return { question: r.question, answer: r.answer, commentary: r.commentary };
+    }),
+    overwrite: !!overwrite
+  };
+
+  btnUploadSave.disabled = true;
+  btnUploadSave.textContent = '保存中…';
+  uploadMessage.textContent = '';
+
+  try {
+    const r = await api('/api/questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    uploadMessage.className = 'text-xs text-green-700';
+    uploadMessage.textContent = (r.updated ? '上書き保存しました: ' : '保存しました: ') +
+                                r.path + '（' + r.count + '問）';
+    uploadCsv.value = '';
+    await loadLibrary();
+  } catch (err) {
+    if (err.unauthorized) return;
+    if (err.data && err.data.exists && !overwrite) {
+      if (confirm('同じ場所に問題集があります。上書きしますか？')) {
+        await saveUpload(true);
+        return;
+      }
+      uploadMessage.className = 'text-xs text-slate-500';
+      uploadMessage.textContent = '保存を中止しました。';
+    } else {
+      uploadMessage.className = 'text-xs text-red-600';
+      uploadMessage.textContent = err.message;
+    }
+  } finally {
+    btnUploadSave.textContent = '保存する';
+    updateUploadPreview();
+  }
+}
+
+btnUploadSave.addEventListener('click', function () { saveUpload(false); });
+
 window.onload = function() {
   switchPhase('import');
   globalCanvas.resizeCanvas();
+  loadLibrary();
 };

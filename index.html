@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=5.3.1">
+  <link rel="stylesheet" href="style.css?v=5.4.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -117,6 +117,29 @@
             </div>
           </div>
 
+          <!-- 問題集の選択 -->
+          <div id="library-box" class="bg-white border border-black p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-700">問題集から選ぶ</span>
+              <div class="flex items-center space-x-3">
+                <button id="btn-library-reload" class="text-[10px] text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
+                <button id="btn-open-upload" class="px-2 py-1 border border-black text-[10px] font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
+              </div>
+            </div>
+
+            <div id="library-tags" class="flex flex-wrap gap-1"></div>
+            <div id="library-tree" class="max-h-56 overflow-y-auto border border-slate-200 p-2 text-xs">
+              <p class="text-[10px] text-slate-400">読み込み中…</p>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span id="library-selected" class="text-[10px] text-slate-400">未選択</span>
+              <button id="btn-start-selected" class="px-4 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
+                選択した問題集で開始
+              </button>
+            </div>
+          </div>
+
           <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-black rounded-none p-8 text-center cursor-pointer transition-colors duration-200 bg-white shadow-sm">
             <input type="file" id="file-input" accept=".json,.csv" class="hidden" multiple>
             <svg class="mx-auto h-10 w-10 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -140,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v5.3.1</span>
+              <span class="cursor-default select-none font-mono">v5.4.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -149,6 +172,44 @@
               <p>Banana,バナナ,熱帯の多年生草本から採れる果実。</p>
             </div>
           </div>
+        </section>
+
+        <!-- 問題集の追加 (Phase Upload) -->
+        <section id="phase-upload" class="hidden space-y-4 pointer-events-auto w-full mx-auto max-w-lg">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-bold text-slate-800">問題集を追加</h2>
+            <button id="btn-upload-back" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">戻る</button>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-3 text-xs">
+            <label class="block">
+              <span class="font-bold text-slate-700">保存先</span>
+              <input id="upload-path" type="text" placeholder="世界史/近代/フランス革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
+              <span class="text-[10px] text-slate-400">スラッシュで区切ると階層になります</span>
+            </label>
+
+            <label class="block">
+              <span class="font-bold text-slate-700">タグ</span>
+              <input id="upload-tags" type="text" placeholder="世界史, 近代, 革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
+              <span class="text-[10px] text-slate-400">カンマ区切り。問題集ごとに付きます</span>
+            </label>
+
+            <label class="block">
+              <span class="font-bold text-slate-700">問題（CSV）</span>
+              <textarea id="upload-csv" rows="8" class="mt-1 w-full p-2 border border-black font-mono text-[11px] focus:outline-none" placeholder="ルイ16世,フランス革命期の国王,1793年に処刑された"></textarea>
+              <span class="text-[10px] text-slate-400">1列目:問題 2列目:答え 3列目:解説（任意）</span>
+            </label>
+
+            <div id="upload-preview" class="text-[10px] text-slate-500"></div>
+          </div>
+
+          <div class="flex justify-end">
+            <button id="btn-upload-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
+              保存する
+            </button>
+          </div>
+
+          <div id="upload-message" class="text-xs"></div>
         </section>
 
         <!-- 一問一答出題画面 (Phase Test) -->
@@ -308,6 +369,21 @@
     </div>
   </div>
 
+  <!-- 合言葉モーダル -->
+  <div id="passphrase-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+    <div class="bg-white border border-black w-full max-w-sm p-6 space-y-3">
+      <h3 class="text-base font-bold text-slate-900 border-b border-black pb-2">合言葉</h3>
+      <p class="text-xs text-slate-500 leading-relaxed">
+        問題集を読み込むために必要です。この端末に保存され、次回からは聞かれません。
+      </p>
+      <input id="passphrase-input" type="password" autocomplete="off" class="w-full p-2 border border-black focus:outline-none">
+      <div id="passphrase-error" class="hidden text-xs text-red-600"></div>
+      <div class="flex justify-end pt-1">
+        <button id="btn-passphrase-save" class="px-4 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none">確認</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 使い方ヘルプモーダル -->
   <div id="help-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-sm pointer-events-auto">
     <div class="bg-white border border-black w-full max-w-lg p-6 space-y-4 max-h-[85vh] overflow-y-auto flex flex-col justify-between">
@@ -329,6 +405,6 @@
     </div>
   </div>
 
-  <script src="script.js?v=5.3.1"></script>
+  <script src="script.js?v=5.4.0"></script>
 </body>
 </html>

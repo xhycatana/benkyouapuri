@@ -2,21 +2,33 @@
 // 合言葉やトークンの「中身」は絶対に返さない。設定されているかどうかだけを返す。
 // GET /api/health
 
+const crypto = require('crypto');
+
 const REPO = process.env.QUESTIONS_REPO;
 const TOKEN = process.env.GITHUB_TOKEN;
 const PASS = process.env.APP_PASSPHRASE;
 
+// 合言葉が合っているときだけ詳しい情報を出す。
+// 誰でも開ける状態で文字数やリポジトリ名を晒すと、攻撃の手がかりになるため。
+function passOk(given) {
+  if (!PASS || typeof given !== 'string' || given.length === 0) return false;
+  const a = crypto.createHash('sha256').update(given).digest();
+  const b = crypto.createHash('sha256').update(PASS).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 module.exports = async (req, res) => {
+  const detailed = passOk(req.headers['x-passphrase']);
+
   const result = {
     ok: false,
     repo_set: !!REPO,
     token_set: !!TOKEN,
     passphrase_set: !!PASS,
-    repo: REPO || null,          // リポジトリ名は秘密ではないので、確認のため返す
-    passphrase_length: PASS ? PASS.length : 0,   // 中身ではなく文字数だけ
     github: null,
     hint: null
   };
+  if (detailed) result.repo = REPO || null;
 
   if (!REPO || !TOKEN || !PASS) {
     result.hint = 'Vercel の Settings > Environment Variables に ' +
@@ -36,12 +48,11 @@ module.exports = async (req, res) => {
     });
     if (r.ok) {
       const info = await r.json();
-      result.github = {
-        reachable: true,
-        private: info.private,
-        default_branch: info.default_branch,
-        empty: info.size === 0
-      };
+      result.github = { reachable: true, private: info.private };
+      if (detailed) {
+        result.github.default_branch = info.default_branch;
+        result.github.empty = info.size === 0;
+      }
       result.ok = true;
       if (!info.private) {
         result.hint = 'このリポジトリは公開されています。問題集を置くなら Private にしてください。';
