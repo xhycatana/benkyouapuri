@@ -350,6 +350,13 @@ class GlobalHandwritingCanvas {
     if (this.shouldIgnorePointer(e)) return;
     e.preventDefault();
     if (e.pointerType === 'touch') this.snapshotBeforeTouch();
+
+    // 手書きは常に1本。すでに接地しているポインタがあるなら、
+    // 別の pointerId が来ても新しい線として描き始めない。
+    // （1ストローク中に2つ目の pointerId が発行されると、それぞれが
+    //   独立した線として描かれ、滑らかな線とカクついた線が二重に出る）
+    if (this.activePointers.size > 0) return;
+
     const pos = this.getPointerPos(e);
     this.activePointers.set(e.pointerId, {
       lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
@@ -363,7 +370,7 @@ class GlobalHandwritingCanvas {
     this.notePointerType(e);
     if (this.shouldIgnorePointer(e)) return;
 
-    if (!this.activePointers.has(e.pointerId) && e.buttons > 0) {
+    if (!this.activePointers.has(e.pointerId) && e.buttons > 0 && this.activePointers.size === 0) {
       if (e.pointerType === 'touch') this.snapshotBeforeTouch();
       const pos = this.getPointerPos(e);
       this.activePointers.set(e.pointerId, {

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>描画方式の比較</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Noto Sans JP', sans-serif; margin: 0; padding: 10px;
+         background: #fff; color: #1e293b; -webkit-user-select: none; user-select: none; }
+  h1 { font-size: 14px; margin: 0 0 6px; }
+  .note { font-size: 11px; color: #64748b; margin: 6px 0; line-height: 1.6; }
+  .panel { margin-bottom: 8px; }
+  .cap { font-size: 11px; font-weight: 700; margin-bottom: 2px; display: flex; justify-content: space-between; }
+  .cap span.sub { font-weight: 400; color: #64748b; }
+  canvas { width: 100%; height: 190px; border: 1px solid #cbd5e1; display: block;
+           touch-action: none; background: #fff; }
+  #c0 { border: 2px solid #000; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+  button { padding: 9px 16px; border: 1px solid #000; background: #fff; font-size: 12px; }
+  select { padding: 8px; border: 1px solid #000; background: #fff; font-size: 12px; }
+  #stat { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<h1>描画方式の比較</h1>
+<p class="note">
+  <b>一番上の枠（太枠）に、いつもどおり文字を書いてください。</b>
+  ゆっくりした線と、速く払う線の両方を入れてください。<br>
+  まったく同じ筆跡が、4通りの方式で同時に描かれます。<b>どれがカクカクしているか</b>を見比べてください。
+</p>
+
+<div class="bar">
+  <label style="font-size:12px">線の太さ
+    <select id="width">
+      <option value="1.0">極細</option>
+      <option value="1.35">細</option>
+      <option value="1.75" selected>普通（アプリの初期値）</option>
+      <option value="3.5">太</option>
+      <option value="6.0">極太</option>
+    </select>
+  </label>
+  <button id="clear">消去</button>
+  <span id="stat">-</span>
+</div>
+
+<div id="ptrbox" style="border:2px solid #000;padding:8px;margin-bottom:10px;font-size:12px;line-height:1.7">
+  <b>ポインタ監視</b>（二重描画の犯人捜し）<br>
+  <span id="ptrinfo" style="font-family:ui-monospace,monospace;font-size:11px">まだ書かれていません</span>
+</div>
+
+<div class="panel">
+  <div class="cap"><span>① 生データを直線で結ぶ（ここに書く）</span><span class="sub">240Hz・補間なし</span></div>
+  <canvas id="c0"></canvas>
+</div>
+
+<div class="panel">
+  <div class="cap"><span>② ベジェ中点補間</span><span class="sub">240Hz・現在のアプリと同じ</span></div>
+  <canvas id="c1"></canvas>
+</div>
+
+<div class="panel">
+  <div class="cap"><span>③ Catmull-Rom スプライン</span><span class="sub">240Hz・実際の点を必ず通る補間</span></div>
+  <canvas id="c2"></canvas>
+</div>
+
+<div class="panel">
+  <div class="cap"><span>④ 1イベント1点＋直線</span><span class="sub">60Hz相当・HTTPだった頃の再現</span></div>
+  <canvas id="c3"></canvas>
+</div>
+
+<script>
+(function () {
+  var ids = ['c0', 'c1', 'c2', 'c3'];
+  var cvs = [], ctxs = [];
+  var widthSel = document.getElementById('width');
+  var stat = document.getElementById('stat');
+
+  var penWidth = parseFloat(widthSel.value);
+  var rect0 = null;
+
+  function sizeAll() {
+    var dpr = window.devicePixelRatio || 1;
+    for (var i = 0; i < ids.length; i++) {
+      var c = cvs[i], r = c.getBoundingClientRect();
+      c.width = r.width * dpr;
+      c.height = r.height * dpr;
+      var x = ctxs[i];
+      x.setTransform(dpr, 0, 0, dpr, 0, 0);
+      x.lineCap = 'round';
+      x.lineJoin = 'round';
+      x.lineWidth = penWidth;
+      x.strokeStyle = '#000';
+    }
+    rect0 = cvs[0].getBoundingClientRect();
+  }
+
+  for (var i = 0; i < ids.length; i++) {
+    var c = document.getElementById(ids[i]);
+    cvs.push(c);
+    ctxs.push(c.getContext('2d'));
+  }
+  sizeAll();
+  window.addEventListener('resize', sizeAll);
+  window.addEventListener('scroll', function () { rect0 = cvs[0].getBoundingClientRect(); });
+
+  widthSel.addEventListener('change', function () {
+    penWidth = parseFloat(widthSel.value);
+    for (var i = 0; i < ctxs.length; i++) ctxs[i].lineWidth = penWidth;
+  });
+
+  var hasCoalesced = typeof PointerEvent !== 'undefined' &&
+                     typeof PointerEvent.prototype.getCoalescedEvents === 'function';
+
+  // ---- 各方式の状態 ----
+  var drawing = false;
+  var totalPts = 0, totalEvents = 0;
+
+  // ---- ポインタ監視 ----
+  // 1ストローク中に別々の pointerId が現れると、アプリ側では
+  // それぞれが独立した線として描かれてしまう。それを検出する。
+  var seenPointers = new Map();   // id -> { type, downs, moves, ups }
+  var activeIds = [];
+  var maxConcurrent = 0;
+  var multiIdStrokes = 0;
+  var idsThisStroke = null;
+
+  function notePointer(e, kind) {
+    var rec = seenPointers.get(e.pointerId);
+    if (!rec) {
+      rec = { type: e.pointerType, downs: 0, moves: 0, ups: 0 };
+      seenPointers.set(e.pointerId, rec);
+    }
+    rec[kind]++;
+    if (idsThisStroke && idsThisStroke.indexOf(e.pointerId) === -1) {
+      idsThisStroke.push(e.pointerId);
+    }
+    renderPtr();
+  }
+
+  function renderPtr() {
+    var lines = [];
+    lines.push('同時にアクティブ: ' + activeIds.length + ' 個（最大 ' + maxConcurrent + ' 個）');
+    lines.push('1ストローク中に複数IDが出た回数: ' + multiIdStrokes +
+               (multiIdStrokes > 0 ? '  ← これが1以上なら二重描画の原因' : ''));
+    lines.push('見た pointerId 一覧:');
+    seenPointers.forEach(function (rec, id) {
+      lines.push('  id=' + id + '  type=' + rec.type +
+                 '  down=' + rec.downs + '  move=' + rec.moves + '  up=' + rec.ups);
+    });
+    document.getElementById('ptrinfo').innerHTML = lines.join('<br>');
+  }
+  var sA = null;   // ① 直線
+  var sB = null;   // ② ベジェ中点
+  var sC = null;   // ③ Catmull-Rom
+  var sD = null;   // ④ 1イベント1点
+
+  function clearAll() {
+    for (var i = 0; i < ctxs.length; i++) {
+      ctxs[i].save();
+      ctxs[i].setTransform(1, 0, 0, 1, 0, 0);
+      ctxs[i].clearRect(0, 0, cvs[i].width, cvs[i].height);
+      ctxs[i].restore();
+    }
+    totalPts = 0; totalEvents = 0;
+    seenPointers = new Map();
+    activeIds = [];
+    maxConcurrent = 0;
+    multiIdStrokes = 0;
+    idsThisStroke = null;
+    stat.textContent = '-';
+    document.getElementById('ptrinfo').textContent = 'まだ書かれていません';
+  }
+  document.getElementById('clear').addEventListener('click', clearAll);
+
+  // ---- ① 生データを直線で結ぶ ----
+  function beginA(p) { sA = { x: p.x, y: p.y }; }
+  function stepA(p) {
+    var x = ctxs[0];
+    x.beginPath();
+    x.moveTo(sA.x, sA.y);
+    x.lineTo(p.x, p.y);
+    x.stroke();
+    sA.x = p.x; sA.y = p.y;
+  }
+
+  // ---- ② ベジェ中点補間（現在のアプリと同じ） ----
+  function beginB(p) { sB = { lastX: p.x, lastY: p.y, midX: p.x, midY: p.y }; }
+  function stepB(p) {
+    var x = ctxs[1];
+    var mx = (sB.lastX + p.x) / 2, my = (sB.lastY + p.y) / 2;
+    x.beginPath();
+    x.moveTo(sB.midX, sB.midY);
+    x.quadraticCurveTo(sB.lastX, sB.lastY, mx, my);
+    x.stroke();
+    sB.midX = mx; sB.midY = my;
+    sB.lastX = p.x; sB.lastY = p.y;
+  }
+  function endB() {
+    if (!sB) return;
+    if (sB.midX !== sB.lastX || sB.midY !== sB.lastY) {
+      var x = ctxs[1];
+      x.beginPath();
+      x.moveTo(sB.midX, sB.midY);
+      x.lineTo(sB.lastX, sB.lastY);
+      x.stroke();
+    }
+    sB = null;
+  }
+
+  // ---- ③ Catmull-Rom スプライン ----
+  // 直近4点 p0,p1,p2,p3 から p1→p2 の区間を描く。p1 と p2 を必ず通るので、
+  // 実際に測れた座標が動かない（角が丸まらない）のが中点補間との違い。
+  function beginC(p) { sC = { pts: [{ x: p.x, y: p.y }] }; }
+  function segC(p0, p1, p2, p3) {
+    var x = ctxs[2];
+    x.beginPath();
+    x.moveTo(p1.x, p1.y);
+    x.bezierCurveTo(
+      p1.x + (p2.x - p0.x) / 6, p1.y + (p2.y - p0.y) / 6,
+      p2.x - (p3.x - p1.x) / 6, p2.y - (p3.y - p1.y) / 6,
+      p2.x, p2.y
+    );
+    x.stroke();
+  }
+  function stepC(p) {
+    sC.pts.push({ x: p.x, y: p.y });
+    var n = sC.pts.length;
+    if (n === 2) {
+      // 2点目は、まだ前後が足りないので直線でつなぐ
+      var x = ctxs[2];
+      x.beginPath();
+      x.moveTo(sC.pts[0].x, sC.pts[0].y);
+      x.lineTo(sC.pts[1].x, sC.pts[1].y);
+      x.stroke();
+    } else if (n === 3) {
+      // p0 が無いので p0 = p1 として代用
+      segC(sC.pts[0], sC.pts[0], sC.pts[1], sC.pts[2]);
+    } else {
+      segC(sC.pts[n - 4], sC.pts[n - 3], sC.pts[n - 2], sC.pts[n - 1]);
+    }
+    if (sC.pts.length > 4) sC.pts.shift();
+  }
+  function endC() {
+    if (!sC) return;
+    var n = sC.pts.length;
+    if (n >= 3) {
+      // 最後の区間は p3 が無いので p3 = p2 として代用
+      segC(sC.pts[n - 3], sC.pts[n - 2], sC.pts[n - 1], sC.pts[n - 1]);
+    }
+    sC = null;
+  }
+
+  // ---- ④ 1イベント1点＋直線（HTTP だった頃の再現） ----
+  function beginD(p) { sD = { x: p.x, y: p.y }; }
+  function stepD(p) {
+    var x = ctxs[3];
+    x.beginPath();
+    x.moveTo(sD.x, sD.y);
+    x.lineTo(p.x, p.y);
+    x.stroke();
+    sD.x = p.x; sD.y = p.y;
+  }
+
+  function toLocal(ev) {
+    return { x: ev.clientX - rect0.left, y: ev.clientY - rect0.top };
+  }
+
+  cvs[0].addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    rect0 = cvs[0].getBoundingClientRect();
+    if (!drawing) idsThisStroke = [];
+    drawing = true;
+    activeIds.push(e.pointerId);
+    if (activeIds.length > maxConcurrent) maxConcurrent = activeIds.length;
+    notePointer(e, 'downs');
+    var p = toLocal(e);
+    beginA(p); beginB(p); beginC(p); beginD(p);
+    try { cvs[0].setPointerCapture(e.pointerId); } catch (err) {}
+  });
+
+  cvs[0].addEventListener('pointermove', function (e) {
+    if (!drawing) return;
+    e.preventDefault();
+    totalEvents++;
+    notePointer(e, 'moves');
+
+    var pts = null;
+    if (hasCoalesced) {
+      try { pts = e.getCoalescedEvents(); } catch (err) { pts = null; }
+    }
+    if (!pts || pts.length === 0) pts = [e];
+
+    // ①②③ は 240Hz の全サンプルを使う
+    for (var i = 0; i < pts.length; i++) {
+      var p = toLocal(pts[i]);
+      stepA(p); stepB(p); stepC(p);
+      totalPts++;
+    }
+    // ④ だけは、まとめて届いた点を捨てて1点しか使わない
+    stepD(toLocal(e));
+
+    stat.textContent = 'イベント ' + totalEvents + ' 回 / 点 ' + totalPts +
+                       ' 個（1イベントあたり ' + (totalPts / totalEvents).toFixed(2) + ' 点）';
+  });
+
+  ['pointerup', 'pointercancel'].forEach(function (t) {
+    window.addEventListener(t, function (e) {
+      if (!drawing) return;
+      notePointer(e, 'ups');
+      var at = activeIds.indexOf(e.pointerId);
+      if (at !== -1) activeIds.splice(at, 1);
+      if (activeIds.length > 0) return;   // まだ他のポインタが接地している
+      if (idsThisStroke && idsThisStroke.length > 1) multiIdStrokes++;
+      idsThisStroke = null;
+      renderPtr();
+      drawing = false;
+      endB(); endC();
+      sA = null; sD = null;
+    });
+  });
+})();
+</script>
+</body>
+</html>
