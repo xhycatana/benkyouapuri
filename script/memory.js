@@ -12,13 +12,17 @@ let memorySettings = {
   ease: 2.5,          // 正解したとき寿命を何倍にするか
   lapseKeep: 0.2,     // 間違えたとき、以前の寿命をどれだけ残すか
   failMinutes: 30,    // 間違えたときの寿命の下限（分）
-  lockMinutes: 30,    // 直前に解いた問題を出題対象から外す時間
   groupSize: 0        // 何問ずつに区切るか（長時間の勉強用）。0 で区切らない
 };
 
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_MEMORY) || 'null');
-  if (saved && typeof saved === 'object') Object.assign(memorySettings, saved);
+  if (saved && typeof saved === 'object') {
+    // 知っている項目だけを受け取る。廃止した設定が保存に残り続けないように。
+    Object.keys(memorySettings).forEach(function (k) {
+      if (typeof saved[k] === 'number' && isFinite(saved[k])) memorySettings[k] = saved[k];
+    });
+  }
 } catch (err) {}
 
 function saveMemorySettings() {
@@ -43,24 +47,15 @@ function calculateProbability(q) {
 }
 
 function sortQuestionsBySrs(list) {
-  const now = new Date();
-  const lockMs = memorySettings.lockMinutes * 60 * 1000;
-
-  // 時間ロックフィルタリング
-  const nonLocked = list.filter(q => {
-    if (!q.last_answered_at) return true;
-    const lastDate = new Date(q.last_answered_at);
-    return (now - lastDate) >= lockMs;
-  });
-
-  const pool = nonLocked.length > 0 ? nonLocked : list;
-
-  const scored = pool.map(q => ({
+  const scored = list.map(q => ({
     item: q,
     prob: calculateProbability(q)
   }));
 
-  // 正解予測確率 P が低い（忘れかけている）順に昇順ソート
+  // 思い出せる確率が低い順に並べる。
+  // 直前に解いた問題は経過時間がほぼ0なので確率がほぼ100%になり、自然に後ろへ回る。
+  // かつては「時間ロック」で明示的に締め出していたが、それは正解数を足し込む
+  // 旧アルゴリズムのための対策だった。忘却曲線に置き換えた時点で不要になったので廃止した。
   scored.sort((a, b) => a.prob - b.prob);
 
   return scored.map(s => s.item);
@@ -125,12 +120,6 @@ setupSlider('fail-input', 'fail-val', val => {
   saveMemorySettings();
   return val + ' 分';
 });
-setupSlider('lock-input', 'lock-val', val => {
-  memorySettings.lockMinutes = parseInt(val, 10);
-  saveMemorySettings();
-  return val + ' 分';
-});
-
 // 区切りの数はつまみではなく数値入力なので、個別に受け取る
 inputGroupSize.addEventListener('input', function () {
   memorySettings.groupSize = Math.max(0, parseInt(inputGroupSize.value, 10) || 0);
@@ -142,8 +131,7 @@ function applyMemorySettingsToUI() {
   const pairs = [
     ['ease-input', 'ease-val', memorySettings.ease, ' 倍'],
     ['lapse-input', 'lapse-val', Math.round(memorySettings.lapseKeep * 100), ' %'],
-    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分'],
-    ['lock-input', 'lock-val', memorySettings.lockMinutes, ' 分']
+    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分']
   ];
   inputGroupSize.value = memorySettings.groupSize;
 
