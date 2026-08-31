@@ -91,6 +91,9 @@ const uploadMessage = document.getElementById('upload-message');
 const btnUploadBack = document.getElementById('btn-upload-back');
 const uploadFile = document.getElementById('upload-file');
 const btnUploadFile = document.getElementById('btn-upload-file');
+const btnUploadSample = document.getElementById('btn-upload-sample');
+const uploadPathPreview = document.getElementById('upload-path-preview');
+const btnResetZoom = document.getElementById('btn-reset-zoom');
 const btnUploadSave = document.getElementById('btn-upload-save');
 
 const passphraseModal = document.getElementById('passphrase-modal');
@@ -1342,9 +1345,20 @@ function renderNode(node, container, depth) {
     count.className = 'ml-2 text-[10px] text-slate-400';
     count.textContent = (s.count || 0) + '問';
 
+    const del = document.createElement('button');
+    del.className = 'ml-auto px-2 text-[11px] text-slate-300 hover:text-red-600 focus:outline-none';
+    del.textContent = '×';
+    del.title = 'この問題集を削除';
+    del.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      deleteSet(s);
+    });
+
     row.appendChild(box);
     row.appendChild(label);
     row.appendChild(count);
+    row.appendChild(del);
     container.appendChild(row);
   });
 }
@@ -1397,13 +1411,45 @@ async function startFromSelection() {
   }
 }
 
+async function deleteSet(set) {
+  const label = (set.title || set.path) + '（' + (set.count || 0) + '問）';
+  if (!confirm(label + ' を削除します。よろしいですか。' + String.fromCharCode(10) +
+               '解答履歴は残るので、同じ問題集を入れ直せば成績も戻ります。')) return;
+  try {
+    await api('/api/questions?path=' + encodeURIComponent(set.path), { method: 'DELETE' });
+    const at = selectedPaths.indexOf(set.path);
+    if (at !== -1) selectedPaths.splice(at, 1);
+    await loadLibrary();
+  } catch (err) {
+    if (!err.unauthorized) alert(err.message);
+  }
+}
+
 btnStartSelected.addEventListener('click', startFromSelection);
 btnLibraryReload.addEventListener('click', loadLibrary);
 
 // --- 問題集の追加 ---
-btnOpenUpload.addEventListener('click', function () {
+// 前回の入力が残っていると、別の問題集を上書きしかねない。開くたびに空にする。
+function resetUploadForm() {
+  uploadPath.value = '';
+  uploadTags.value = '';
+  uploadCsv.value = '';
   uploadMessage.textContent = '';
+  uploadMessage.className = 'text-xs';
+  updateUploadPreview();
+}
+
+btnOpenUpload.addEventListener('click', function () {
+  resetUploadForm();
   switchPhase('upload');
+});
+
+btnUploadSample.addEventListener('click', function () {
+  uploadPath.value = 'サンプル/果物';
+  uploadTags.value = 'サンプル';
+  uploadCsv.value = sampleQuestionsJSON.map(function (q) {
+    return q.question + ',' + q.answer + ',' + q.commentary;
+  }).join(String.fromCharCode(10));
   updateUploadPreview();
 });
 btnUploadBack.addEventListener('click', function () {
@@ -1413,6 +1459,12 @@ btnUploadBack.addEventListener('click', function () {
 function updateUploadPreview() {
   const rows = parseCSV(uploadCsv.value);
   const path = uploadPath.value.trim();
+
+  // スラッシュがそのまま階層になることを、その場で見せる
+  const parts = path.split('/').map(function (p) { return p.trim(); }).filter(Boolean);
+  uploadPathPreview.textContent = parts.length === 0 ? ''
+    : (parts.length === 1 ? '一番上に「' + parts[0] + '」として置かれます'
+                          : parts.join('  >  '));
   uploadPreview.textContent = rows.length === 0
     ? '読み取れる問題がありません。'
     : (rows.length + '問を読み取りました。先頭: ' + rows[0].question + ' → ' + rows[0].answer);
@@ -1494,8 +1546,41 @@ async function saveUpload(overwrite) {
 
 btnUploadSave.addEventListener('click', function () { saveUpload(false); });
 
+
+// --- 拡大の抑止 -----------------------------------------------------------
+// iOS Safari は viewport の user-scalable=no を無視するため、ピンチ操作そのものを止める。
+// ホーム画面から起動しているとブラウザのUIが無く、拡大すると戻せなくなるため。
+['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+  document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false });
+});
+
+// それでも拡大されてしまった場合の逃げ道。
+// 拡大中だけボタンを出し、viewport を入れ直して元に戻す。
+function watchZoom() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+
+  function check() {
+    btnResetZoom.classList.toggle('hidden', vv.scale <= 1.01);
+  }
+  vv.addEventListener('resize', check);
+  vv.addEventListener('scroll', check);
+  check();
+}
+
+btnResetZoom.addEventListener('click', function () {
+  const meta = document.querySelector('meta[name=viewport]');
+  if (!meta) return;
+  const original = meta.getAttribute('content');
+  meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+  setTimeout(function () { meta.setAttribute('content', original); }, 300);
+  window.scrollTo(0, 0);
+  btnResetZoom.classList.add('hidden');
+});
+
 window.onload = function() {
   switchPhase('import');
   globalCanvas.resizeCanvas();
+  watchZoom();
   loadLibrary();
 };

@@ -8,6 +8,13 @@ body {
   overflow: hidden; /* 全画面手書き操作をスムーズに行うためスクロールを抑制 */
 }
 
+/* ダブルタップによる拡大を無効にする。
+   iOS Safari は viewport の user-scalable=no を無視するため、
+   ピンチ拡大は script.js 側で gesture イベントを止めて防いでいる。 */
+body {
+  touch-action: manipulation;
+}
+
 /* パッと切り替えるためのスタイル（透明度は0%か100%のみ。） */
 .fade-out {
   opacity: 0;

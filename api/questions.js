@@ -5,6 +5,7 @@
 //   GET  /api/questions?path=世界史/…   -> 問題集1つの中身
 //   GET  /api/questions?rebuild=1      -> リポジトリを走査して一覧を作り直す
 //   POST /api/questions                -> 問題集を保存する
+//   DELETE /api/questions?path=…       -> 問題集を削除する
 //
 // いずれも x-passphrase ヘッダーでの合言葉が必要。
 
@@ -73,6 +74,20 @@ async function writeFile(path, text, message) {
     throw new Error('GitHub 書き込み失敗 (' + r.status + ') ' + t.slice(0, 200));
   }
   return r.json();
+}
+
+async function deleteFile(path, message) {
+  const existing = await readFile(path);
+  if (!existing) return false;
+  const r = await gh('https://api.github.com/repos/' + REPO + '/contents/' + encPath(path), {
+    method: 'DELETE',
+    body: JSON.stringify({ message: message, sha: existing.sha })
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error('GitHub 削除失敗 (' + r.status + ') ' + t.slice(0, 200));
+  }
+  return true;
 }
 
 // --- 一覧の読み書き -------------------------------------------------------
@@ -314,6 +329,27 @@ module.exports = async (req, res) => {
       await writeIndex(index);
 
       res.status(200).json({ saved: true, path: path, count: questions.length, updated: existed });
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      const path = cleanPath(req.query.path);
+      if (!path) {
+        res.status(400).json({ error: '削除する問題集の指定が正しくありません。' });
+        return;
+      }
+
+      const removed = await deleteFile(SETS_DIR + '/' + path + '.json', '削除: ' + path);
+      if (!removed) {
+        res.status(404).json({ error: '見つかりません: ' + path });
+        return;
+      }
+
+      const index = await readIndex();
+      index.sets = index.sets.filter(function (s) { return s.path !== path; });
+      await writeIndex(index);
+
+      res.status(200).json({ deleted: true, path: path });
       return;
     }
 
