@@ -161,14 +161,31 @@ index.json
 
 ```
 index.html          画面
-script.js           アプリ本体
 style.css           フォントと最小限のスタイル
+
+script/state.js     共有する状態
+script/dom.js       HTML の要素への参照
+script/util.js      小さな道具（CSV解析など）
+script/memory.js    記憶モデル（忘却曲線と寿命の更新）
+script/api.js       合言葉とサーバーとの通信
+script/progress.js  解答履歴
+script/canvas.js    手書きキャンバスとペンの設定
+script/quiz.js      出題・採点・画面の切り替え
+script/library.js   問題集の一覧とツリー
+script/upload.js    問題集の追加
+script/app.js       起動処理
+
 api/questions.js    問題集の読み書き（合言葉が必要）
 api/health.js       設定の診断
 ```
 
-`index.html` は `script.js?v=x.y.z` の形で読み込んでいます。
-**更新時は、画面下部に表示するバージョンと、この2箇所のクエリを揃えて変更してください。**
+ビルドは行わず、`index.html` が上の順番どおりに読み込みます。
+**この順番には意味があります。**変数を宣言しているファイルより先に、それを使う
+ファイルが実行されないよう並べてあります（`state` → `dom` → 各機能 → `app`）。
+並べ替えるときは注意してください。
+
+読み込みは `script/xxx.js?v=x.y.z` の形にしています。
+**更新時は、画面下部に表示するバージョンと、すべての `?v=` を揃えて変更してください。**
 これを忘れると、iPad が古いファイルをキャッシュから読み込みます。
 
 ### 開発時の注意
