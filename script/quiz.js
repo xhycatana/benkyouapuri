@@ -198,29 +198,20 @@ function startLearning(problemData) {
   switchPhase('test');
 }
 
-// --- ファイル読み込みハンドラー ---
-async function handleFileUpload(files) {
-  if (files.length === 0) return;
-
-  let mergedData = [];
-  for (const file of files) {
-    const text = await file.text();
-    if (file.name.endsWith('.json')) {
-      try {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) mergedData = mergedData.concat(parsed);
-      } catch(e) {
-        alert("JSONファイルの読み込みに失敗しました。");
-      }
-    } else {
-      const parsed = parseCSV(text);
-      mergedData = mergedData.concat(parsed);
-    }
+// --- ホーム画面のドロップゾーン ---
+// ここに落としたファイルは、その場で解き始めるのではなく、
+// 「問題集を追加」画面へ中身をコピーして開く。保存先・タグを付けずに
+// 問題集の管理から外れてしまうのを避けるため。
+// 保存先は1つしか指定できないので、まとめて複数は受け付けない。
+function handleHomeDrop(files) {
+  if (!files || files.length === 0) return;
+  if (files.length > 1) {
+    alert('まとめては追加できません。1つずつ追加してください。');
+    return;
   }
-
-  if (mergedData.length > 0) {
-    startLearning(mergedData);
-  }
+  resetUploadForm();
+  switchPhase('upload');
+  loadFileIntoUploadForm(files[0]);
 }
 
 // --- イベント設定 ---
@@ -236,12 +227,12 @@ dropZone.addEventListener('dragleave', () => {
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('border-black', 'bg-slate-50');
-  handleFileUpload(e.dataTransfer.files);
+  handleHomeDrop(e.dataTransfer.files);
 });
 
 dropZone.addEventListener('click', () => fileInput.click());
 
-fileInput.addEventListener('change', (e) => handleFileUpload(e.target.files));
+fileInput.addEventListener('change', (e) => handleHomeDrop(e.target.files));
 
 btnUseSample.addEventListener('click', () => {
   startLearning(JSON.parse(JSON.stringify(sampleQuestionsJSON)));

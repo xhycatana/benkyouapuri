@@ -53,13 +53,10 @@ function updateUploadPreview() {
 uploadCsv.addEventListener('input', updateUploadPreview);
 uploadPath.addEventListener('input', updateUploadPreview);
 
-// CSV はファイルからも読み込めるようにする。
-// iPad では「ファイル」アプリが開くので、Gemini の出力を保存しておけばそのまま選べる。
-btnUploadFile.addEventListener('click', function () { uploadFile.click(); });
-
-uploadFile.addEventListener('change', async function (e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
+// ファイルの中身を貼り付け欄へコピーする。
+// 「ファイルから読み込む」ボタンと、ホーム画面のドロップゾーン（quiz.js の
+// handleHomeDrop）の両方から呼ばれる共通処理。
+async function loadFileIntoUploadForm(file) {
   try {
     uploadCsv.value = await file.text();
     // 保存先が空なら、ファイル名（拡張子を除く）を初期値として入れておく
@@ -72,8 +69,18 @@ uploadFile.addEventListener('change', async function (e) {
     uploadMessage.className = 'text-xs text-red-600';
     uploadMessage.textContent = 'ファイルを読めませんでした: ' + err.message;
   }
-  uploadFile.value = '';   // 同じファイルを続けて選べるようにする
   updateUploadPreview();
+}
+
+// CSV・JSON はファイルからも読み込めるようにする。
+// iPad では「ファイル」アプリが開くので、Gemini の出力を保存しておけばそのまま選べる。
+btnUploadFile.addEventListener('click', function () { uploadFile.click(); });
+
+uploadFile.addEventListener('change', async function (e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  await loadFileIntoUploadForm(file);
+  uploadFile.value = '';   // 同じファイルを続けて選べるようにする
 });
 
 async function saveUpload(overwrite) {

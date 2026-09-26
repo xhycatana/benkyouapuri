@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.8.0">
+  <link rel="stylesheet" href="style.css?v=6.9.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -145,12 +145,12 @@
           </div>
 
           <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-black rounded-none p-8 text-center cursor-pointer transition-colors duration-200 bg-white shadow-sm">
-            <input type="file" id="file-input" accept=".json,.csv" class="hidden" multiple>
+            <input type="file" id="file-input" accept=".json,.csv,application/json,text/csv" class="hidden">
             <svg class="mx-auto h-10 w-10 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <p class="text-sm text-slate-700 font-medium">問題データ (JSON / CSV) をドロップ</p>
-            <p class="text-xs text-slate-400 mt-1">またはクリックしてまとめて選択</p>
+            <p class="text-xs text-slate-400 mt-1">「問題集を追加」画面が開きます（1つだけ）</p>
           </div>
 
           <div class="pt-2 space-y-2">
@@ -167,11 +167,11 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.8.0</span>
+              <span class="cursor-default select-none font-mono">v6.9.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
-              <p class="font-bold mb-1">CSVフォーマット例 (1行目:問題, 2行目:答え, 3行目:解説)</p>
+              <p class="font-bold mb-1">CSVフォーマット例 (1列目:問題, 2列目:答え, 3列目:解説)</p>
               <p>Apple,りんご,バラ科リンゴ属の果実。</p>
               <p>Banana,バナナ,熱帯の多年生草本から採れる果実。</p>
             </div>
@@ -443,16 +443,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.8.0"></script>
-  <script src="script/dom.js?v=6.8.0"></script>
-  <script src="script/util.js?v=6.8.0"></script>
-  <script src="script/memory.js?v=6.8.0"></script>
-  <script src="script/api.js?v=6.8.0"></script>
-  <script src="script/progress.js?v=6.8.0"></script>
-  <script src="script/canvas.js?v=6.8.0"></script>
-  <script src="script/quiz.js?v=6.8.0"></script>
-  <script src="script/library.js?v=6.8.0"></script>
-  <script src="script/upload.js?v=6.8.0"></script>
-  <script src="script/app.js?v=6.8.0"></script>
+  <script src="script/state.js?v=6.9.0"></script>
+  <script src="script/dom.js?v=6.9.0"></script>
+  <script src="script/util.js?v=6.9.0"></script>
+  <script src="script/memory.js?v=6.9.0"></script>
+  <script src="script/api.js?v=6.9.0"></script>
+  <script src="script/progress.js?v=6.9.0"></script>
+  <script src="script/canvas.js?v=6.9.0"></script>
+  <script src="script/quiz.js?v=6.9.0"></script>
+  <script src="script/library.js?v=6.9.0"></script>
+  <script src="script/upload.js?v=6.9.0"></script>
+  <script src="script/app.js?v=6.9.0"></script>
 </body>
 </html>
