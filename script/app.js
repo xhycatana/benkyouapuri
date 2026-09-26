@@ -37,6 +37,7 @@ window.onload = function() {
   switchPhase('import');
   globalCanvas.resizeCanvas();
   applyMemorySettingsToUI();
+  applyDisplaySettingsToUI();
   watchZoom();
   loadLibrary();
 };

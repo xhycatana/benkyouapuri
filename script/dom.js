@@ -43,6 +43,8 @@ const checkRandom = document.getElementById('check-random');
 const checkSwap = document.getElementById('check-swap');
 const inputGroupSize = document.getElementById('input-group-size');
 const inputQuestionLimit = document.getElementById('input-question-limit');
+const questionFontInput = document.getElementById('question-font-input');
+const questionFontVal = document.getElementById('question-font-val');
 
 const btnUseSample = document.getElementById('btn-use-sample');
 

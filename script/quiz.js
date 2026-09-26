@@ -260,6 +260,41 @@ btnSkipGroup.addEventListener('click', () => {
   transitionPhase(() => goToNextGroupOrFinish());
 });
 
+// --- 問題文の文字の大きさ ---
+// 見た目だけの設定なので、記憶モデル(memorySettings)とは別に持つ。
+const STORAGE_KEY_DISPLAY = 'flashmemo_displaySettings';
+let displaySettings = { questionFontSize: 24 };
+
+try {
+  const savedDisplay = JSON.parse(localStorage.getItem(STORAGE_KEY_DISPLAY) || 'null');
+  if (savedDisplay && typeof savedDisplay.questionFontSize === 'number' && isFinite(savedDisplay.questionFontSize)) {
+    displaySettings.questionFontSize = savedDisplay.questionFontSize;
+  }
+} catch (err) {}
+
+function saveDisplaySettings() {
+  try { localStorage.setItem(STORAGE_KEY_DISPLAY, JSON.stringify(displaySettings)); } catch (err) {}
+}
+
+function applyQuestionFontSize() {
+  testQuestion.style.fontSize = displaySettings.questionFontSize + 'px';
+  reviewQuestion.style.fontSize = displaySettings.questionFontSize + 'px';
+}
+
+function applyDisplaySettingsToUI() {
+  questionFontInput.value = displaySettings.questionFontSize;
+  questionFontVal.textContent = displaySettings.questionFontSize + ' px';
+  applyQuestionFontSize();
+}
+
+questionFontInput.addEventListener('input', function () {
+  displaySettings.questionFontSize = parseInt(questionFontInput.value, 10);
+  questionFontVal.textContent = displaySettings.questionFontSize + ' px';
+  saveDisplaySettings();
+  applyQuestionFontSize();
+});
+
+
 // --- 出題フェーズ (Testing) ---
 function initTestPhase() {
   currentIndex = 0;
