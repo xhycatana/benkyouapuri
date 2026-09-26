@@ -7,6 +7,7 @@ const phaseImport = document.getElementById('phase-import');
 const phaseTest = document.getElementById('phase-test');
 const phaseReview = document.getElementById('phase-review');
 const phaseUpload = document.getElementById('phase-upload');
+const phaseHelp = document.getElementById('phase-help');
 const phaseContainer = document.getElementById('phase-container');
 
 const libraryTags = document.getElementById('library-tags');
@@ -44,12 +45,9 @@ const inputGroupSize = document.getElementById('input-group-size');
 const inputQuestionLimit = document.getElementById('input-question-limit');
 
 const btnUseSample = document.getElementById('btn-use-sample');
-const btnToggleExample = document.getElementById('btn-toggle-example');
-const exampleBox = document.getElementById('example-box');
 
-const helpModal = document.getElementById('help-modal');
 const btnShowHelp = document.getElementById('btn-show-help');
-const btnCloseHelp = document.getElementById('btn-close-help');
+const btnHelpBack = document.getElementById('btn-help-back');
 
 const settingsModal = document.getElementById('settings-modal');
 const btnOpenSettings = document.getElementById('btn-open-settings');

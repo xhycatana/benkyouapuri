@@ -14,13 +14,14 @@ function switchPhase(newPhase) {
   // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
   // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
-  const scrollable = (newPhase === 'import' || newPhase === 'upload');
+  const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help');
   phaseContainer.classList.toggle('overflow-y-auto', scrollable);
   phaseContainer.classList.toggle('pointer-events-auto', scrollable);
   phaseContainer.classList.toggle('justify-center', !scrollable);
-  
+
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
+  phaseHelp.classList.add('hidden');
   phaseTest.classList.add('hidden');
   phaseReview.classList.add('hidden');
 
@@ -32,6 +33,10 @@ function switchPhase(newPhase) {
     saveProgress();
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
+    leftControlsContainer.classList.add('hidden');
+    globalCanvas.clear();
+  } else if (newPhase === 'help') {
+    phaseHelp.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
   } else if (newPhase === 'test') {
@@ -238,12 +243,8 @@ btnUseSample.addEventListener('click', () => {
   startLearning(JSON.parse(JSON.stringify(sampleQuestionsJSON)));
 });
 
-btnToggleExample.addEventListener('click', () => {
-  exampleBox.classList.toggle('hidden');
-});
-
-btnShowHelp.addEventListener('click', () => helpModal.classList.remove('hidden'));
-btnCloseHelp.addEventListener('click', () => helpModal.classList.add('hidden'));
+btnShowHelp.addEventListener('click', () => switchPhase('help'));
+btnHelpBack.addEventListener('click', () => switchPhase('import'));
 
 btnOpenSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
 btnCloseSettings.addEventListener('click', () => settingsModal.classList.add('hidden'));

@@ -9,7 +9,7 @@ let userHasDrawn = {};        // 描画フラグ
 let wrongQuestions = [];       // 間違えた問題リスト
 
 let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）
-let currentPhase = 'import';   // 'import', 'test', 'review'
+let currentPhase = 'import';   // 'import', 'upload', 'help', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;
 let isBlanked = false;     // 切り替えガード
