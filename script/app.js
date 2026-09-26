@@ -33,8 +33,56 @@ btnResetZoom.addEventListener('click', function () {
 });
 
 
+// --- 横向き固定（見た目だけ） ------------------------------------------------
+// iPad の Safari には、ネイティブアプリのような画面回転の禁止機能が無い
+// （screen.orientation.lock() は Fullscreen API とセットでないと使えず、
+// iOS Safari は動画以外に Fullscreen API を提供していない）。
+// そこで、縦向きになったら body を90度回転させ、見た目だけ常に横向きのまま
+// になるようにする。window.innerWidth/innerHeight は回転の影響を受けず、
+// 常に本物（縦向き）の値を返すので、キャンバスのサイズ計算とポインタ座標は
+// 別途、回転後の見た目に合わせて変換する（canvas.js 側）。
+function isLandscape() {
+  return window.innerWidth >= window.innerHeight;
+}
+
+function applyOrientationLock() {
+  const b = document.body;
+  if (isLandscape()) {
+    b.style.width = '';
+    b.style.height = '';
+    b.style.position = '';
+    b.style.top = '';
+    b.style.left = '';
+    b.style.transformOrigin = '';
+    b.style.transform = '';
+  } else {
+    // 縦向きの実サイズを取り、横向きに見えるよう90度回転させる。
+    // width/height を入れ替えた箱を用意し、その左上を軸に回すことで
+    // ちょうど画面いっぱいに重なる（透けたり余ったりしない）。
+    b.style.width = window.innerHeight + 'px';
+    b.style.height = window.innerWidth + 'px';
+    b.style.position = 'fixed';
+    b.style.top = '0';
+    b.style.left = '100%';
+    b.style.transformOrigin = 'top left';
+    b.style.transform = 'rotate(90deg)';
+  }
+}
+
+let orientationResizeTimeout = null;
+function handleOrientationResize() {
+  applyOrientationLock();
+  clearTimeout(orientationResizeTimeout);
+  orientationResizeTimeout = setTimeout(function () { globalCanvas.resizeCanvas(); }, 100);
+}
+
+window.addEventListener('resize', handleOrientationResize);
+window.addEventListener('orientationchange', handleOrientationResize);
+
+
 window.onload = function() {
   switchPhase('import');
+  applyOrientationLock();
   globalCanvas.resizeCanvas();
   applyMemorySettingsToUI();
   watchZoom();

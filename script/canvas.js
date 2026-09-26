@@ -27,18 +27,18 @@ class GlobalHandwritingCanvas {
       if (isDrawingPhase() && !isTransitioning) e.preventDefault();
     }, { passive: false });
 
-    this.resizeTimeout = null;
-    window.addEventListener('resize', () => {
-      clearTimeout(this.resizeTimeout);
-      this.resizeTimeout = setTimeout(() => this.resizeCanvas(), 100);
-    });
+    // リサイズへの反応（横向き固定の適用も含む）は app.js が担当する。
   }
 
   resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
-    const width = Math.max(1, window.innerWidth);
-    const height = Math.max(1, window.innerHeight);
-    
+    // 縦向きの間は body を90度回転させて見た目を横向きに保つ（app.js）。
+    // window.innerWidth/innerHeight は回転の影響を受けず常に本物（縦向き）の
+    // 値を返すので、見た目に合わせてここで幅と高さを入れ替える。
+    const landscape = isLandscape();
+    const width = Math.max(1, landscape ? window.innerWidth : window.innerHeight);
+    const height = Math.max(1, landscape ? window.innerHeight : window.innerWidth);
+
     const tempCanvas = document.createElement('canvas');
     let hasContent = false;
     
@@ -79,7 +79,12 @@ class GlobalHandwritingCanvas {
   }
 
   getPointerPos(e) {
-    return { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    if (isLandscape()) {
+      return { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    }
+    // 縦向き：見た目は90度回転しているので、実際に触れた座標
+    // （回転前の物理座標）を、見た目基準の座標へ変換する。
+    return { x: e.clientY, y: window.innerWidth - e.clientX, t: e.timeStamp };
   }
 
   // --- パームリジェクション ---
