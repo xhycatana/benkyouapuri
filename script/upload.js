@@ -1,4 +1,4 @@
-// 問題集の追加。CSV を読み取って保存する。
+// 問題集の追加。CSV または JSON を読み取って保存する。
 // ----------------------------------------------------------------------
 
 // --- 問題集の追加 ---
@@ -30,7 +30,8 @@ btnUploadBack.addEventListener('click', function () {
 });
 
 function updateUploadPreview() {
-  const rows = parseCSV(uploadCsv.value);
+  const parsed = parseUploadText(uploadCsv.value);
+  const rows = parsed.rows;
   const path = uploadPath.value.trim();
 
   // スラッシュがそのまま階層になることを、その場で見せる
@@ -38,10 +39,15 @@ function updateUploadPreview() {
   uploadPathPreview.textContent = parts.length === 0 ? ''
     : (parts.length === 1 ? '一番上に「' + parts[0] + '」として置かれます'
                           : parts.join('  >  '));
-  uploadPreview.textContent = rows.length === 0
-    ? '読み取れる問題がありません。'
-    : (rows.length + '問を読み取りました。先頭: ' + rows[0].question + ' → ' + rows[0].answer);
-  btnUploadSave.disabled = (rows.length === 0 || path.length === 0);
+
+  // CSV と JSON、どちらとして読んだかを常に見せる。判定を誤ったときにすぐ気づけるように。
+  const formatLabel = uploadCsv.value.trim() === '' ? '' : (parsed.format === 'json' ? '[JSON] ' : '[CSV] ');
+  uploadPreview.textContent = formatLabel + (parsed.error ? parsed.error
+    : rows.length === 0
+      ? '読み取れる問題がありません。'
+      : (rows.length + '問を読み取りました。先頭: ' +
+         rows[0].question.replace(/\n/g, ' / ') + ' → ' + rows[0].answer));
+  btnUploadSave.disabled = (rows.length === 0 || path.length === 0 || !!parsed.error);
 }
 
 uploadCsv.addEventListener('input', updateUploadPreview);
@@ -71,7 +77,13 @@ uploadFile.addEventListener('change', async function (e) {
 });
 
 async function saveUpload(overwrite) {
-  const rows = parseCSV(uploadCsv.value);
+  const parsed = parseUploadText(uploadCsv.value);
+  if (parsed.error) {
+    uploadMessage.className = 'text-xs text-red-600';
+    uploadMessage.textContent = parsed.error;
+    return;
+  }
+  const rows = parsed.rows;
   const path = uploadPath.value.trim();
   const payload = {
     path: path,

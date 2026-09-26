@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.7.0">
+  <link rel="stylesheet" href="style.css?v=6.8.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -167,7 +167,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.7.0</span>
+              <span class="cursor-default select-none font-mono">v6.8.0</span>
             </div>
             
             <div id="example-box" class="hidden text-[10px] text-slate-400/60 font-mono text-center p-3 bg-white border border-slate-200">
@@ -200,15 +200,18 @@
             </label>
 
             <div class="flex items-center justify-between">
-              <span class="font-bold text-slate-700">問題（CSV）</span>
+              <span class="font-bold text-slate-700">問題（CSV または JSON）</span>
               <button id="btn-upload-file" class="px-2 py-1 border border-black text-[10px] font-bold hover:bg-slate-50 focus:outline-none">
                 ファイルから読み込む
               </button>
-              <input type="file" id="upload-file" accept=".csv,.txt,text/csv,text/plain" class="hidden">
+              <input type="file" id="upload-file" accept=".csv,.txt,.json,text/csv,text/plain,application/json" class="hidden">
             </div>
             <label class="block">
               <textarea id="upload-csv" rows="8" class="mt-1 w-full p-2 border border-black font-mono text-[11px] focus:outline-none" placeholder="ルイ16世,フランス革命期の国王,1793年に処刑された"></textarea>
-              <span class="text-[10px] text-slate-400">1列目:問題 2列目:答え 3列目:解説（任意）</span>
+              <span class="text-[10px] text-slate-400">
+                CSV: 1列目:問題 2列目:答え 3列目:解説（任意）／
+                JSON: 見出しを鍵にした入れ子でも読み込めます（詳しくは README）
+              </span>
             </label>
 
             <div id="upload-preview" class="text-[10px] text-slate-500"></div>
@@ -440,16 +443,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.7.0"></script>
-  <script src="script/dom.js?v=6.7.0"></script>
-  <script src="script/util.js?v=6.7.0"></script>
-  <script src="script/memory.js?v=6.7.0"></script>
-  <script src="script/api.js?v=6.7.0"></script>
-  <script src="script/progress.js?v=6.7.0"></script>
-  <script src="script/canvas.js?v=6.7.0"></script>
-  <script src="script/quiz.js?v=6.7.0"></script>
-  <script src="script/library.js?v=6.7.0"></script>
-  <script src="script/upload.js?v=6.7.0"></script>
-  <script src="script/app.js?v=6.7.0"></script>
+  <script src="script/state.js?v=6.8.0"></script>
+  <script src="script/dom.js?v=6.8.0"></script>
+  <script src="script/util.js?v=6.8.0"></script>
+  <script src="script/memory.js?v=6.8.0"></script>
+  <script src="script/api.js?v=6.8.0"></script>
+  <script src="script/progress.js?v=6.8.0"></script>
+  <script src="script/canvas.js?v=6.8.0"></script>
+  <script src="script/quiz.js?v=6.8.0"></script>
+  <script src="script/library.js?v=6.8.0"></script>
+  <script src="script/upload.js?v=6.8.0"></script>
+  <script src="script/app.js?v=6.8.0"></script>
 </body>
 </html>
