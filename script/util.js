@@ -68,9 +68,6 @@ function parseCSV(text) {
 // 表示するときは、通った見出しをすべて改行でつなげる。これにより
 // 「banana」だけでは意味を聞かれているのか類義語を聞かれているのか
 // わからない、という取り違えを防ぐ。
-//
-// 配列（[{question, answer, commentary}, ...]）を渡した場合は、
-// 見出し無しの一覧としてそのまま受け取る。
 function parseQuestionJSON(root) {
   const result = [];
 
@@ -100,24 +97,6 @@ function parseQuestionJSON(root) {
   }
 
   function walk(node, path) {
-    if (Array.isArray(node)) {
-      node.forEach(function (item) {
-        if (item && typeof item === 'object' && item.question && item.answer) {
-          result.push({
-            id: item.id || generateUUID(),
-            question: String(item.question).trim(),
-            answer: String(item.answer).trim(),
-            commentary: String(item.commentary || '').trim(),
-            correct_count: 0,
-            incorrect_count: 0,
-            lifespan: 1.0,
-            last_answered_at: null,
-            is_deleted: false
-          });
-        }
-      });
-      return;
-    }
     if (!node || typeof node !== 'object') return;
     Object.keys(node).forEach(function (key) {
       const value = node[key];
@@ -133,11 +112,12 @@ function parseQuestionJSON(root) {
   return result;
 }
 
-// 貼り付け欄・ファイルの中身が JSON なら上の入れ子形式として、
-// そうでなければ CSV として読み取る。書式は先頭の文字だけで判定する。
+// 貼り付け欄・ファイルの中身が JSON（見出し付きの入れ子オブジェクト）なら
+// 上の形式として、そうでなければ CSV として読み取る。
+// JSON かどうかは先頭が「{」かどうかだけで判定する。
 function parseUploadText(text) {
   const trimmed = text.trim();
-  const looksLikeJSON = trimmed.charAt(0) === '{' || trimmed.charAt(0) === '[';
+  const looksLikeJSON = trimmed.charAt(0) === '{';
   if (!looksLikeJSON) {
     return { rows: parseCSV(text), error: null, format: 'csv' };
   }
