@@ -64,11 +64,15 @@ class GlobalHandwritingCanvas {
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
     
+    // 元のサイズのまま、左上を基準に置き直す。新旧のキャンバスの大きさに
+    // 引き伸ばして合わせると、画面を回転しただけで書いた線の形が変わって
+    // しまう（正方形が長方形になる等）。拡大縮小せずに描き直すことで、
+    // 回転しても書いた内容の見た目は変わらないようにする。
     if (hasContent && tempCanvas.width > 0 && tempCanvas.height > 0) {
       this.ctx.save();
       this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       try {
-        this.ctx.drawImage(tempCanvas, 0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.drawImage(tempCanvas, 0, 0);
       } catch (err) {}
       this.ctx.restore();
     }
