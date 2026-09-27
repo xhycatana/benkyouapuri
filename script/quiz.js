@@ -65,21 +65,20 @@ function switchPhase(newPhase) {
 }
 
 // --- ホーム画面の余白 ---
-// 上下の余白を左右の余白の 2/3 にする。中身の幅は最大 768px（max-w-3xl）で、左右の余白はその残り。
+// 上下左右の余白を同じ大きさにする。大きさは、中身の幅を 768px（max-w-3xl）にしたときの左右の余白の 2/3。
 // 横向きの画面では中身が画面に収まらなくなるが、そのぶんはスクロールし、スクロールしきった先の下の余白も同じにする。
-const HOME_MAX_WIDTH = 768;
-const HOME_VERTICAL_RATIO = 2 / 3;   // 上下の余白 ÷ 左右の余白
+const HOME_BASE_WIDTH = 768;
+const HOME_MARGIN_RATIO = 2 / 3;
 
 function fitHomeMargins() {
   if (currentPhase !== 'import') return;
   const W = window.innerWidth;
   // phaseContainer は body の余白の内側にある。画面の外枠にもともとある余白より小さくはできないので、それを最小にする
   const box = phaseContainer.getBoundingClientRect();
-  const margin = Math.max(box.top, (W - HOME_MAX_WIDTH) / 2);
+  const margin = Math.max(box.top, (W - HOME_BASE_WIDTH) / 2 * HOME_MARGIN_RATIO);
   phaseImport.style.maxWidth = Math.max(0, W - 2 * margin) + 'px';
-  const vertical = margin * HOME_VERTICAL_RATIO;
-  phaseImport.style.marginTop = Math.max(0, vertical - box.top) + 'px';
-  phaseImport.style.marginBottom = Math.max(0, vertical - (window.innerHeight - box.bottom)) + 'px';
+  phaseImport.style.marginTop = Math.max(0, margin - box.top) + 'px';
+  phaseImport.style.marginBottom = Math.max(0, margin - (window.innerHeight - box.bottom)) + 'px';
 }
 
 window.addEventListener('resize', fitHomeMargins);
