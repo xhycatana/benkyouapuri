@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.24.0">
+  <link rel="stylesheet" href="style.css?v=6.26.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -172,7 +172,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.24.0</span>
+              <span class="cursor-default select-none font-mono">v6.26.0</span>
             </div>
           </div>
         </section>
@@ -394,7 +394,22 @@
   "次の英単語の類義語を答えなさい。": { "look": "see" }
 }</p>
               <p>答えを <code class="font-mono">[答え, 解説]</code> の配列にすると、解説も付けられます。</p>
+              <p>JSON は複数続けて貼れます（Gemini が問題集をパートに分けて出力したとき用）。別々の JSON に同じ見出しがあっても、問題は消えずに全部読み込まれます。</p>
               <p class="text-slate-400">貼り付け欄・ファイルの中身が「{」で始まっていれば JSON、それ以外は CSV として読み取ります。判定結果はプレビューの先頭に [JSON] / [CSV] と表示されます。</p>
+            </div>
+
+            <div class="pt-1">
+              <p class="font-bold text-slate-800">穴埋め問題（JSON）</p>
+              <p>空欄を含む全文を見出しにして、その下に空欄の記号ごとの答えを書きます。全文を見せたまま、空欄1つずつが1問として出題されます。</p>
+              <p class="font-mono text-[10px] bg-slate-50 border border-slate-200 p-2 whitespace-pre">{
+  "次の文の空欄に当てはまる語句を答えなさい。": {
+    "酸化物から（1）を取り除く変化を（2）という。": {
+      "（1）": "酸素",
+      "（2）": "還元"
+    }
+  }
+}</p>
+              <p>空欄の記号は（1）・①・ア など自由ですが、<strong>数字だけ（"1"）にはしないでください。</strong>数字だけの記号は並び順が変わってしまいます。</p>
             </div>
           </div>
 
@@ -501,16 +516,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.24.0"></script>
-  <script src="script/dom.js?v=6.24.0"></script>
-  <script src="script/util.js?v=6.24.0"></script>
-  <script src="script/memory.js?v=6.24.0"></script>
-  <script src="script/api.js?v=6.24.0"></script>
-  <script src="script/progress.js?v=6.24.0"></script>
-  <script src="script/canvas.js?v=6.24.0"></script>
-  <script src="script/quiz.js?v=6.24.0"></script>
-  <script src="script/library.js?v=6.24.0"></script>
-  <script src="script/upload.js?v=6.24.0"></script>
-  <script src="script/app.js?v=6.24.0"></script>
+  <script src="script/state.js?v=6.26.0"></script>
+  <script src="script/dom.js?v=6.26.0"></script>
+  <script src="script/util.js?v=6.26.0"></script>
+  <script src="script/memory.js?v=6.26.0"></script>
+  <script src="script/api.js?v=6.26.0"></script>
+  <script src="script/progress.js?v=6.26.0"></script>
+  <script src="script/canvas.js?v=6.26.0"></script>
+  <script src="script/quiz.js?v=6.26.0"></script>
+  <script src="script/library.js?v=6.26.0"></script>
+  <script src="script/upload.js?v=6.26.0"></script>
+  <script src="script/app.js?v=6.26.0"></script>
 </body>
 </html>

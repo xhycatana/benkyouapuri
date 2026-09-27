@@ -41,7 +41,10 @@ function updateUploadPreview() {
                           : parts.join('  >  '));
 
   // CSV と JSON、どちらとして読んだかを常に見せる。判定を誤ったときにすぐ気づけるように。
-  const formatLabel = uploadCsv.value.trim() === '' ? '' : (parsed.format === 'json' ? '[JSON] ' : '[CSV] ');
+  // JSON を複数つなげて読んだときは、その数も出す（パートの貼り忘れに気づけるように）
+  const formatLabel = uploadCsv.value.trim() === '' ? ''
+    : parsed.format === 'csv' ? '[CSV] '
+    : parsed.parts > 1 ? '[JSON×' + parsed.parts + '] ' : '[JSON] ';
   uploadPreview.textContent = formatLabel + (parsed.error ? parsed.error
     : rows.length === 0
       ? '読み取れる問題がありません。'

@@ -112,22 +112,67 @@ function parseQuestionJSON(root) {
   return result;
 }
 
+// JSON が複数続けて貼られている場合（Gemini が長い問題集をパートに分けて出力したときなど）に、
+// 1つずつに切り分ける。文字列の中の { } は数えない。
+// JSON と JSON の間に置けるのは空白と改行だけ。
+function splitJSONObjects(text) {
+  const parts = [];
+  let depth = 0, inString = false, escaped = false, start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (depth > 0 && c === '"') { inString = true; continue; }
+    if (c === '{') {
+      if (depth === 0) start = i;
+      depth++;
+      continue;
+    }
+    if (c === '}' && depth > 0) {
+      depth--;
+      if (depth === 0) parts.push(text.slice(start, i + 1));
+      continue;
+    }
+    if (depth === 0 && !/\s/.test(c)) {
+      return { parts: parts, error: 'JSON の外に余計な文字があります: 「' + text.slice(i, i + 15) + '」' };
+    }
+  }
+  if (depth !== 0) {
+    return { parts: parts, error: 'JSON が途中で終わっています。Gemini の出力が途切れていないか確認してください。' };
+  }
+  return { parts: parts, error: null };
+}
+
 // 貼り付け欄・ファイルの中身が JSON（見出し付きの入れ子オブジェクト）なら
 // 上の形式として、そうでなければ CSV として読み取る。
 // JSON かどうかは先頭が「{」かどうかだけで判定する。
+// JSON が複数並んでいれば、それぞれを読んで問題をつなげる。
 function parseUploadText(text) {
   const trimmed = text.trim();
   const looksLikeJSON = trimmed.charAt(0) === '{';
   if (!looksLikeJSON) {
-    return { rows: parseCSV(text), error: null, format: 'csv' };
+    return { rows: parseCSV(text), error: null, format: 'csv', parts: 1 };
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch (err) {
-    return { rows: [], error: 'JSON の形式が正しくありません: ' + err.message, format: 'json' };
+  const split = splitJSONObjects(trimmed);
+  if (split.error) {
+    return { rows: [], error: split.error, format: 'json', parts: split.parts.length };
   }
-  return { rows: parseQuestionJSON(parsed), error: null, format: 'json' };
+  let rows = [];
+  for (let n = 0; n < split.parts.length; n++) {
+    let parsed;
+    try {
+      parsed = JSON.parse(split.parts[n]);
+    } catch (err) {
+      const which = split.parts.length > 1 ? ((n + 1) + 'つ目の') : '';
+      return { rows: [], error: which + 'JSON の形式が正しくありません: ' + err.message, format: 'json', parts: split.parts.length };
+    }
+    rows = rows.concat(parseQuestionJSON(parsed));
+  }
+  return { rows: rows, error: null, format: 'json', parts: split.parts.length };
 }
 
 // 答えを「／」で複数の答えに分ける（意味を複数答えさせる問題など）。
