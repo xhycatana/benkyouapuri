@@ -72,6 +72,20 @@ function updateSrsMetrics(question, isCorrect) {
   if (answeredThisSession[question.id]) return;
   answeredThisSession[question.id] = true;
 
+  // 全履歴ログ（あとで忘却曲線のパラメータを学習するときに使う）。
+  // 集計を更新する前の値を記録する＝そのとき何を予測していたかを残す。
+  const now = new Date().toISOString();
+  recordHistoryEntry({
+    id: makeHistoryEntryId(),
+    question_id: question.id,
+    answered_at: now,
+    correct: !!isCorrect,
+    lifespan_before: (question.lifespan > 0) ? question.lifespan : null,
+    elapsed_days: question.last_answered_at
+      ? Math.max(0, (Date.parse(now) - Date.parse(question.last_answered_at)) / (1000 * 60 * 60 * 24))
+      : null
+  });
+
   if (isCorrect) {
     question.correct_count = (question.correct_count || 0) + 1;
     const previous = question.lifespan;
@@ -90,7 +104,7 @@ function updateSrsMetrics(question, isCorrect) {
     question.lifespan = Math.max(floorDays, previousLife * memorySettings.lapseKeep);
   }
 
-  question.last_answered_at = new Date().toISOString();
+  question.last_answered_at = now;
   recordProgress(question);
 }
 

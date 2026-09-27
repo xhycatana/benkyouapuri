@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.19.0">
+  <link rel="stylesheet" href="style.css?v=6.24.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -65,9 +65,9 @@
 
   <div class="relative z-10 w-full h-full flex flex-col justify-between pointer-events-none flex-grow">
     
-    <header class="max-w-3xl w-full mx-auto flex justify-between items-center pb-2 pointer-events-auto">
+    <header id="app-header" class="max-w-3xl w-full mx-auto flex justify-between items-center pb-2 pointer-events-auto">
       <div class="ml-auto">
-        <button id="btn-open-settings" class="p-2 text-slate-400 hover:text-black transition-colors focus:outline-none" title="アルゴリズム設定">
+        <button id="btn-open-settings" class="p-2 text-slate-400 hover:text-[var(--accent)] transition-colors focus:outline-none" title="アルゴリズム設定">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -81,26 +81,26 @@
 
         <!-- インポート・設定画面 (Phase Import) -->
         <section id="phase-import" class="space-y-6 pointer-events-auto w-full mx-auto my-auto max-w-3xl">
-          <div class="bg-white border border-black p-4 space-y-4">
+          <div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
             <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">長期記憶（確率の低い順）優先選出</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-srs-sort" class="sr-only peer" checked>
-                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)]"></div>
               </label>
             </div>
             <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">出題順をランダムにする</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-random" class="sr-only peer">
-                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)]"></div>
               </label>
             </div>
             <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">問題と答えを逆にする</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-swap" class="sr-only peer">
-                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)]"></div>
               </label>
             </div>
             <div class="flex items-center justify-between text-sm">
@@ -109,37 +109,47 @@
                 <p class="text-xs text-slate-400">優先度の高い順に、この数だけ解きます（0で全部）</p>
               </div>
               <div class="flex items-center space-x-2">
-                <input type="number" id="input-question-limit" value="0" min="0" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="出題数の上限">
+                <input type="number" id="input-question-limit" value="0" min="0" class="w-20 p-2 border border-slate-300 rounded-lg text-center focus:outline-none focus:border-[var(--accent)] font-bold text-sm" title="出題数の上限">
                 <span class="text-slate-400">問まで</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <div>
+                <span class="font-bold text-slate-700">何問ずつに区切るか</span>
+                <p class="text-xs text-slate-400">長時間の勉強用。区切ると間違えた問題が早く戻ります（0で区切らない）</p>
+              </div>
+              <div class="flex items-center space-x-2">
+                <input type="number" id="input-group-size" value="0" min="0" class="w-20 p-2 border border-slate-300 rounded-lg text-center focus:outline-none focus:border-[var(--accent)] font-bold text-sm" title="区切る問題数">
+                <span class="text-slate-400">問ずつ</span>
               </div>
             </div>
 
           </div>
 
           <!-- 問題集の選択 -->
-          <div id="library-box" class="bg-white border border-black p-4 space-y-3">
+          <div id="library-box" class="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
             <div class="flex items-center justify-between">
               <span class="text-sm font-bold text-slate-700">問題集から選ぶ</span>
               <div class="flex items-center space-x-3">
-                <button id="btn-library-reload" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
-                <button id="btn-open-upload" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
+                <button id="btn-library-reload" class="text-xs text-slate-400 hover:text-[var(--accent)] underline focus:outline-none">再読み込み</button>
+                <button id="btn-open-upload" class="px-3 py-1.5 border border-[var(--accent)] text-[var(--accent)] rounded-lg text-xs font-bold hover:bg-[var(--accent-soft)] focus:outline-none">問題集を追加</button>
               </div>
             </div>
 
             <div id="library-tags" class="flex flex-wrap gap-1"></div>
-            <div id="library-tree" class="max-h-[28rem] overflow-y-auto border border-slate-200 p-2 text-sm">
+            <div id="library-tree" class="max-h-[28rem] overflow-y-auto border border-slate-200 rounded-lg p-2 text-sm">
               <p class="text-xs text-slate-400">読み込み中…</p>
             </div>
 
             <div class="flex items-center justify-between">
               <span id="library-selected" class="text-xs text-slate-400">未選択</span>
-              <button id="btn-start-selected" class="px-5 py-2.5 bg-black text-white text-sm font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
+              <button id="btn-start-selected" class="px-5 py-2.5 bg-[var(--accent)] text-white text-sm font-bold rounded-lg hover:bg-[var(--accent-dark)] transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
                 選択した問題集で開始
               </button>
             </div>
           </div>
 
-          <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-black rounded-none p-8 text-center cursor-pointer transition-colors duration-200 bg-white shadow-sm">
+          <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-[var(--accent)] rounded-2xl p-8 text-center cursor-pointer transition-colors duration-200 bg-white shadow-sm">
             <input type="file" id="file-input" accept=".json,.csv,application/json,text/csv" class="hidden">
             <svg class="mx-auto h-10 w-10 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -150,15 +160,19 @@
 
           <div class="pt-2">
             <div class="flex justify-center items-center space-x-3 text-[10px] text-slate-400/50">
-              <button id="btn-use-sample" class="hover:text-black underline transition-colors focus:outline-none">
+              <button id="btn-use-sample" class="hover:text-[var(--accent)] underline transition-colors focus:outline-none">
                 サンプル
               </button>
               <span>・</span>
-              <button id="btn-show-help" class="hover:text-black underline transition-colors focus:outline-none">
+              <button id="btn-show-help" class="hover:text-[var(--accent)] underline transition-colors focus:outline-none">
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.19.0</span>
+              <button id="btn-open-settings-home" class="hover:text-[var(--accent)] underline transition-colors focus:outline-none">
+                詳細設定
+              </button>
+              <span>・</span>
+              <span class="cursor-default select-none font-mono">v6.24.0</span>
             </div>
           </div>
         </section>
@@ -390,6 +404,7 @@
             <p><strong>出題順をランダムにする</strong> … 選ばれた問題の中で、順番だけを入れ替えます。どの問題が選ばれるかは変わりません。</p>
             <p><strong>問題と答えを逆にする</strong> … 2列目（またはJSONの答え側）を問題として出します。</p>
             <p><strong>出題する上限</strong> … 優先度の高い順に、その数だけ出題します（0で全部）。</p>
+            <p><strong>何問ずつに区切るか</strong> … 長時間の勉強専用の設定です。区切ると、間違えた問題が早く戻ってきます。0なら一続きで出ます。</p>
           </div>
 
           <div class="bg-white border border-black p-4 space-y-2 text-xs text-slate-700 leading-relaxed">
@@ -397,7 +412,6 @@
             <p><strong>正解したときの伸び</strong> … 正解すると記憶の寿命がこの倍率で延びます。</p>
             <p><strong>間違えたときに残す割合</strong> … よく覚えていた問題ほど、間違えても間隔を長く保ちます。</p>
             <p><strong>間違えたときの最短間隔</strong> … 寿命がこれより短くなることはありません。</p>
-            <p><strong>何問ずつに区切るか</strong> … 長時間の勉強専用の設定です。区切ると、間違えた問題が早く戻ってきます。0なら一続きで出ます。</p>
           </div>
 
           <div class="bg-white border border-black p-4 space-y-2 text-xs text-slate-700 leading-relaxed">
@@ -451,18 +465,6 @@
         </div>
 
         <div class="pt-1 border-t border-slate-100">
-          <label class="block font-bold text-slate-700 mb-1 pt-2">長時間の勉強で使う</label>
-          <div class="flex items-center justify-between">
-            <span class="text-slate-600">何問ずつに区切るか</span>
-            <div class="flex items-center space-x-2">
-              <input type="number" id="input-group-size" value="0" min="0" class="w-16 p-1 border border-black text-center focus:outline-none font-bold" title="区切る問題数">
-              <span class="text-slate-400">問ずつ</span>
-            </div>
-          </div>
-          <p class="text-[10px] text-slate-400 mt-0.5">区切ると、間違えた問題が早く戻ってきます。0 で区切りません</p>
-        </div>
-
-        <div class="pt-1 border-t border-slate-100">
           <label class="block font-bold text-slate-700 mb-1 pt-2">
             問題文の文字の大きさ: <span id="question-font-val" class="text-blue-600 font-bold">24 px</span>
           </label>
@@ -499,16 +501,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.19.0"></script>
-  <script src="script/dom.js?v=6.19.0"></script>
-  <script src="script/util.js?v=6.19.0"></script>
-  <script src="script/memory.js?v=6.19.0"></script>
-  <script src="script/api.js?v=6.19.0"></script>
-  <script src="script/progress.js?v=6.19.0"></script>
-  <script src="script/canvas.js?v=6.19.0"></script>
-  <script src="script/quiz.js?v=6.19.0"></script>
-  <script src="script/library.js?v=6.19.0"></script>
-  <script src="script/upload.js?v=6.19.0"></script>
-  <script src="script/app.js?v=6.19.0"></script>
+  <script src="script/state.js?v=6.24.0"></script>
+  <script src="script/dom.js?v=6.24.0"></script>
+  <script src="script/util.js?v=6.24.0"></script>
+  <script src="script/memory.js?v=6.24.0"></script>
+  <script src="script/api.js?v=6.24.0"></script>
+  <script src="script/progress.js?v=6.24.0"></script>
+  <script src="script/canvas.js?v=6.24.0"></script>
+  <script src="script/quiz.js?v=6.24.0"></script>
+  <script src="script/library.js?v=6.24.0"></script>
+  <script src="script/upload.js?v=6.24.0"></script>
+  <script src="script/app.js?v=6.24.0"></script>
 </body>
 </html>

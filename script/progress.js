@@ -94,5 +94,96 @@ async function saveProgress() {
 
 // アプリを閉じたり、別のアプリに切り替えたときにも書き戻す
 document.addEventListener('visibilitychange', function () {
-  if (document.visibilityState === 'hidden') saveProgress();
+  if (document.visibilityState === 'hidden') { saveProgress(); saveHistory(); }
 });
+
+
+// --- 全履歴ログ -------------------------------------------------------------
+// 上の集計（progressStats）とは別に、解答1回ごとの記録を残す。
+// 今は忘却曲線のパラメータを学習する材料として貯めておくだけで、
+// アプリ自身はこのログを読み書きにも出題にも使わない。
+// 月ごとのファイルに分けて非公開リポジトリへ送るので、集計と違って際限なく太らない。
+// 同じ記録を二重に送っても大丈夫なよう、記録ごとに固有IDを持たせて、
+// サーバー側では「置き換え」ではなく「IDで重複を除いてから追加」で合成する。
+
+const STORAGE_KEY_HISTORY = 'flashmemo_history_pending';
+
+let historyPending = [];     // まだ書き戻していない、解答1回ごとの記録
+let historyDirty = false;
+let historySaving = false;
+let historyTimer = null;
+
+function makeHistoryEntryId() {
+  if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function readLocalHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_HISTORY);
+    const j = raw ? JSON.parse(raw) : null;
+    return Array.isArray(j) ? j : [];
+  } catch (err) { return []; }
+}
+
+function writeLocalHistory() {
+  try { localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(historyPending)); } catch (err) {}
+}
+
+// 起動時に、前回送りきれなかった分があれば読み込んで送信を試みる
+function loadHistoryPending() {
+  historyPending = readLocalHistory();
+  if (historyPending.length > 0) {
+    historyDirty = true;
+    saveHistory();
+  }
+}
+
+function recordHistoryEntry(entry) {
+  historyPending.push(entry);
+  historyDirty = true;
+  writeLocalHistory();
+
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(saveHistory, 60000);
+}
+
+// 記録を、解答日時から決まる月（"YYYY-MM"）ごとに束ねる。
+// オフラインの期間が月をまたいでいれば、3つ以上に分かれることもある。
+function groupHistoryByMonth(entries) {
+  const byMonth = {};
+  entries.forEach(function (e) {
+    const month = String(e.answered_at || '').slice(0, 7);
+    if (!byMonth[month]) byMonth[month] = [];
+    byMonth[month].push(e);
+  });
+  return Object.keys(byMonth).map(function (month) {
+    return { month: month, entries: byMonth[month] };
+  });
+}
+
+async function saveHistory() {
+  if (!historyDirty || historySaving) return;
+  if (!getPassphrase()) return;
+  clearTimeout(historyTimer);
+  historySaving = true;
+
+  // 送信中に新しい記録が増えても取りこぼさないよう、今ある分だけのスナップショットを送る
+  const toSend = historyPending.slice();
+  try {
+    await api('/api/questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'history', groups: groupHistoryByMonth(toSend) })
+    });
+    // 送れた分だけ取り除く（送信中に増えた分は次回に回す）
+    const sentIds = new Set(toSend.map(function (e) { return e.id; }));
+    historyPending = historyPending.filter(function (e) { return !sentIds.has(e.id); });
+    writeLocalHistory();
+    historyDirty = historyPending.length > 0;
+  } catch (err) {
+    // 失敗しても端末には残っているので、次回の起動時に送り直される
+  } finally {
+    historySaving = false;
+  }
+}

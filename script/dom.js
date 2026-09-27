@@ -53,7 +53,9 @@ const btnHelpBack = document.getElementById('btn-help-back');
 
 const settingsModal = document.getElementById('settings-modal');
 const btnOpenSettings = document.getElementById('btn-open-settings');
+const btnOpenSettingsHome = document.getElementById('btn-open-settings-home');
 const btnCloseSettings = document.getElementById('btn-close-settings');
+const appHeader = document.getElementById('app-header');
 
 const testQuestion = document.getElementById('test-question');
 const testProbIndicator = document.getElementById('test-prob-indicator');

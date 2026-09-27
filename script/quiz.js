@@ -11,6 +11,9 @@ function isDrawingPhase() {
 function switchPhase(newPhase) {
   currentPhase = newPhase;
 
+  // ホーム画面では歯車ボタンを設定カードの中に置くので、右上の独立ボタンは隠す。
+  appHeader.classList.toggle('hidden', newPhase === 'import');
+
   // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
   // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
@@ -31,6 +34,7 @@ function switchPhase(newPhase) {
     globalCanvas.clear();
     globalCanvas.resetPalmRejection();
     saveProgress();
+    saveHistory();
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
@@ -247,6 +251,7 @@ btnShowHelp.addEventListener('click', () => switchPhase('help'));
 btnHelpBack.addEventListener('click', () => switchPhase('import'));
 
 btnOpenSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+btnOpenSettingsHome.addEventListener('click', () => settingsModal.classList.remove('hidden'));
 btnCloseSettings.addEventListener('click', () => settingsModal.classList.add('hidden'));
 
 // --- 戻る・スキップ ---

@@ -4,6 +4,8 @@
 //   GET  /api/questions                -> 問題集の一覧（index.json）
 //   GET  /api/questions?path=世界史/…   -> 問題集1つの中身
 //   GET  /api/questions?rebuild=1      -> リポジトリを走査して一覧を作り直す
+//   GET  /api/questions?kind=progress  -> 解答履歴の集計
+//   GET  /api/questions?kind=history&month=YYYY-MM -> 解答ログ（月ごと）
 //   POST /api/questions                -> 問題集を保存する
 //   DELETE /api/questions?path=…       -> 問題集を削除する
 //
@@ -17,7 +19,9 @@ const PASS = process.env.APP_PASSPHRASE;
 
 const SETS_DIR = 'sets';           // 問題集の置き場所
 const INDEX_FILE = 'index.json';   // 一覧。保存のたびに更新する
-const PROGRESS_FILE = 'progress.json'; // 解答履歴。問題ごとの成績
+const PROGRESS_FILE = 'progress.json'; // 解答履歴の集計。問題ごとの成績
+const HISTORY_DIR = 'history';     // 解答ログ（1回ごと）。月ごとのファイルに分ける
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 // --- 合言葉の確認 ---------------------------------------------------------
 // 文字列比較にかかる時間から中身を推測されないよう、長さを揃えて比較する。
@@ -193,6 +197,52 @@ function mergeStats(base, incoming) {
   return base;
 }
 
+// --- 全履歴ログ（1回ごと。忘却曲線のパラメータ学習用の材料） ----------------
+// 月ごとのファイルに分けて、集計と違って際限なく太らないようにする。
+function historyFile(month) {
+  return HISTORY_DIR + '/' + month + '.json';
+}
+
+async function readHistoryMonth(month) {
+  const f = await readFile(historyFile(month));
+  if (!f) return { updated_at: null, entries: [] };
+  try {
+    const j = JSON.parse(f.text);
+    if (!Array.isArray(j.entries)) j.entries = [];
+    return j;
+  } catch (err) {
+    return { updated_at: null, entries: [] };
+  }
+}
+
+function sanitizeHistoryEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const id = (typeof e.id === 'string' && e.id) ? e.id : null;
+  const questionId = (typeof e.question_id === 'string' && e.question_id) ? e.question_id : null;
+  const answeredAt = (typeof e.answered_at === 'string' && !isNaN(Date.parse(e.answered_at))) ? e.answered_at : null;
+  if (!id || !questionId || !answeredAt) return null;
+  return {
+    id: id,
+    question_id: questionId,
+    answered_at: answeredAt,
+    correct: !!e.correct,
+    lifespan_before: (typeof e.lifespan_before === 'number' && e.lifespan_before > 0) ? e.lifespan_before : null,
+    elapsed_days: (typeof e.elapsed_days === 'number' && e.elapsed_days >= 0) ? e.elapsed_days : null
+  };
+}
+
+// 端末を複数使っても取りこぼしたり重複したりしないよう、
+// 「置き換え」ではなく「id で重複を除いてから追加」で合成する。
+function mergeHistoryEntries(base, incoming) {
+  const seen = new Set(base.map(function (e) { return e.id; }));
+  incoming.forEach(function (e) {
+    if (seen.has(e.id)) return;
+    seen.add(e.id);
+    base.push(e);
+  });
+  return base;
+}
+
 // --- 入力の検証 -----------------------------------------------------------
 function cleanPath(p) {
   if (typeof p !== 'string') return null;
@@ -224,6 +274,16 @@ module.exports = async (req, res) => {
     if (req.method === 'GET') {
       if (req.query.kind === 'progress') {
         res.status(200).json(await readProgress());
+        return;
+      }
+
+      if (req.query.kind === 'history') {
+        const month = typeof req.query.month === 'string' ? req.query.month : '';
+        if (!MONTH_RE.test(month)) {
+          res.status(400).json({ error: '月の指定が正しくありません（例: 2026-09）。' });
+          return;
+        }
+        res.status(200).json(await readHistoryMonth(month));
         return;
       }
 
@@ -269,6 +329,31 @@ module.exports = async (req, res) => {
         const saved = { updated_at: new Date().toISOString(), stats: merged };
         await writeFile(PROGRESS_FILE, JSON.stringify(saved, null, 2), '解答履歴を更新');
         res.status(200).json({ saved: true, count: Object.keys(merged).length });
+        return;
+      }
+
+      // 全履歴ログの保存（月ごとのファイルに分けて追加する）
+      if (body.kind === 'history') {
+        const groups = Array.isArray(body.groups) ? body.groups : [];
+        let added = 0;
+        for (const g of groups) {
+          const month = (g && typeof g.month === 'string') ? g.month : '';
+          if (!MONTH_RE.test(month)) continue;
+          const entries = (g && Array.isArray(g.entries) ? g.entries : [])
+            .map(sanitizeHistoryEntry)
+            .filter(Boolean);
+          if (entries.length === 0) continue;
+
+          const current = await readHistoryMonth(month);
+          const before = current.entries.length;
+          const merged = mergeHistoryEntries(current.entries, entries);
+          if (merged.length === before) continue; // 新規分がなければ書き込まない
+
+          added += merged.length - before;
+          const saved = { updated_at: new Date().toISOString(), entries: merged };
+          await writeFile(historyFile(month), JSON.stringify(saved, null, 2), '解答ログを更新（' + month + '）');
+        }
+        res.status(200).json({ saved: true, added: added });
         return;
       }
 

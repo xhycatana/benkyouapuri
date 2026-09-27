@@ -40,4 +40,5 @@ window.onload = function() {
   applyDisplaySettingsToUI();
   watchZoom();
   loadLibrary();
+  loadHistoryPending();
 };
