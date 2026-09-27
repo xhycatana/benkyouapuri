@@ -1,31 +1,6 @@
 // 全画面の手書きキャンバスと、ペンの設定。
 // ----------------------------------------------------------------------
 
-// --- 画面の向き ---
-// 画面を回転しても、書いた線は紙のようにガラス上の同じ場所に残し、問題文などの画面だけを回す。
-// そのために、書いたときの向きと今の向きの差だけ、線を逆向きに回して描き直す。
-//
-// window.orientation（iPad の Safari にある）の 0 / 90 / -90 / 180 を 0 / 90 / 270 / 180 にそろえる。
-// 90 は端末を反時計回りに倒した状態（ホームボタンが右）。取れない環境では null を返し、
-// その場合は向きの補正をせず、左上を基準に置き直すだけにする。
-function screenOrientation() {
-  const o = window.orientation;
-  return (typeof o === 'number') ? ((o % 360) + 360) % 360 : null;
-}
-
-// ガラス上の位置（縦向きのときの座標）→ 向き o のときの画面座標、への変換。
-// w, h は向き o のときの画面の幅・高さ（CSSピクセル）。
-function glassToViewport(o, w, h) {
-  const sideways = (o === 90 || o === 270);
-  const gw = sideways ? h : w;   // 縦向きのときの幅
-  const gh = sideways ? w : h;   // 縦向きのときの高さ
-  if (o === 90) return new DOMMatrix([0, -1, 1, 0, 0, gw]);
-  if (o === 180) return new DOMMatrix([-1, 0, 0, -1, gw, gh]);
-  if (o === 270) return new DOMMatrix([0, 1, -1, 0, gh, 0]);
-  return new DOMMatrix();
-}
-
-
 // --- 線の描き方（本番のキャンバスと、使い方画面の試し書きで共通） ---
 
 // 1回の pointermove に含まれるサンプル点を取り出す。
@@ -99,64 +74,22 @@ class GlobalHandwritingCanvas {
       if (isDrawingPhase() && !isTransitioning) e.preventDefault();
     }, { passive: false });
 
-    // 今のキャンバスが、どの向き・大きさのときに書かれたものか
-    this.orientation = screenOrientation();
-    this.cssWidth = 0;
-    this.cssHeight = 0;
-
-    this.settleFrame = null;      // 見張りのために予約した次のコマ
-    this.settleStart = 0;         // 最後に回転・大きさの変化を知らされた時刻
-    this.settleLastKey = null;    // 前のコマで読んだ向きと大きさ
-    const scheduleResize = () => {
-      this.settleStart = performance.now();
-      this.settleLastKey = null;
-      if (this.settleFrame === null) {
-        this.settleFrame = requestAnimationFrame(() => this.resizeWhenSettled());
-      }
-    };
-    window.addEventListener('resize', scheduleResize);
-    // 横向きから逆の横向きへ180度回したときは画面の大きさが変わらず resize が来ないので、向きの変化も見る
-    window.addEventListener('orientationchange', scheduleResize);
+    this.resizeTimeout = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(this.resizeTimeout);
+      this.resizeTimeout = setTimeout(() => this.resizeCanvas(), 100);
+    });
   }
 
-  // 回転の途中では、向き（window.orientation）と画面の大きさの更新がずれて届くことがある。
-  // 食い違った瞬間に描き直すと、計算がずれたうえに「回転は処理済み」と記録してしまい、
-  // 正しい大きさが届いても直らない（iPad実機で、正しく残ったり残らなかったりした原因）。
-  // そこで、描画の1コマごとに向きと大きさを読み、次の2つを満たしたらすぐ描き直す。
-  //   ・横向きなのに縦長、のような食い違いが無い
-  //   ・2コマ続けて同じ値（一瞬だけ出た途中の値を、確定した値と取り違えないため）
-  // 3秒待っても揃わないとき（画面分割で横向きなのに縦長の窓、など）は、回転の補正をせずに描き直す。
-  // 食い違った大きさのまま回転させると、線が画面の外へ飛んで消えてしまうため。
-  resizeWhenSettled() {
-    this.settleFrame = null;
-    const o = screenOrientation();
-    const w = window.innerWidth, h = window.innerHeight;
-    const settled = (o === null) || ((o === 90 || o === 270) ? w >= h : w <= h);
-    const key = o + ':' + w + 'x' + h;
-    const stable = settled && key === this.settleLastKey;
-    this.settleLastKey = key;
-    if (!stable && performance.now() - this.settleStart < 3000) {
-      this.settleFrame = requestAnimationFrame(() => this.resizeWhenSettled());
-      return;
-    }
-    this.settleLastKey = null;
-    this.resizeCanvas(settled);
-  }
-
-  resizeCanvas(allowRotation = true) {
+  resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
 
     const tempCanvas = document.createElement('canvas');
     let hasContent = false;
-    // 補正しないときは、書いたときの向きを今の向きと同じ扱いにする（＝左上基準で置き直すだけ）
-    const from = {
-      orientation: allowRotation ? this.orientation : screenOrientation(),
-      w: this.cssWidth, h: this.cssHeight
-    };
 
-    if (this.canvas.width > 0 && this.canvas.height > 0 && from.w > 0 && from.h > 0) {
+    if (this.canvas.width > 0 && this.canvas.height > 0) {
       tempCanvas.width = this.canvas.width;
       tempCanvas.height = this.canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
@@ -170,8 +103,6 @@ class GlobalHandwritingCanvas {
     this.canvas.height = height * dpr;
     this.canvas.style.width = width + 'px';
     this.canvas.style.height = height + 'px';
-    this.cssWidth = width;
-    this.cssHeight = height;
 
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
@@ -180,27 +111,17 @@ class GlobalHandwritingCanvas {
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
 
-    if (hasContent) {
-      try { this.drawKeepingPlace(tempCanvas, from); } catch (err) {}
+    // 書いた内容を新しい大きさいっぱいに引き伸ばして描き直す。回転すると線は縦横に
+    // 伸び縮みするが、アプリの切り替えなどで途中の大きさを何度経由しても、
+    // 書いた内容が画面の外へはみ出して欠けたり、位置がずれたままになったりしない。
+    if (hasContent && tempCanvas.width > 0 && tempCanvas.height > 0) {
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      try {
+        this.ctx.drawImage(tempCanvas, 0, 0, this.canvas.width, this.canvas.height);
+      } catch (err) {}
+      this.ctx.restore();
     }
-    this.orientation = screenOrientation();
-  }
-
-  // from = { orientation, w, h }（書いたときの向きと画面の大きさ）の内容を、今の画面に描き直す。
-  // 大きさは変えない（引き伸ばすと、正方形が長方形になるなど線の形が変わる）。
-  // 向きが変わっていれば、ガラス上の同じ場所に来るよう、差の分だけ逆に回して置く。
-  drawKeepingPlace(source, from) {
-    const dpr = window.devicePixelRatio || 1;
-    const to = { orientation: screenOrientation(), w: this.cssWidth, h: this.cssHeight };
-    this.ctx.save();
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (from.orientation !== null && to.orientation !== null && from.orientation !== to.orientation) {
-      const m = glassToViewport(to.orientation, to.w, to.h)
-        .multiply(glassToViewport(from.orientation, from.w, from.h).inverse());
-      this.ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
-    }
-    this.ctx.drawImage(source, 0, 0, from.w, from.h);
-    this.ctx.restore();
   }
 
   getPointerPos(e) {
@@ -389,26 +310,24 @@ class GlobalHandwritingCanvas {
     this.ctx.lineJoin = 'round';
   }
 
-  // 書いた内容を、そのときの向き・大きさと一緒に取っておく。
-  // 丸つけ画面で読み込み直すときに、出題中と向きが違っていてもガラス上の同じ場所に戻せるように。
-  getState() {
-    return {
-      url: this.canvas.toDataURL(),
-      orientation: screenOrientation(),
-      w: this.cssWidth || window.innerWidth,
-      h: this.cssHeight || window.innerHeight
-    };
+  getDataURL() {
+    return this.canvas.toDataURL();
   }
 
-  loadState(state) {
+  loadState(dataURL) {
     this.clear();
-    if (!state || !state.url) return;
+    if (!dataURL) return;
     const img = new Image();
     img.onload = () => {
-      try { this.drawKeepingPlace(img, state); } catch (err) {}
+      const dpr = window.devicePixelRatio || 1;
+      if (this.canvas.width > 0 && this.canvas.height > 0) {
+        try {
+          this.ctx.drawImage(img, 0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
+        } catch (err) {}
+      }
       this.applyPenConfig();
     };
-    img.src = state.url;
+    img.src = dataURL;
   }
 }
 

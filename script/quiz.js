@@ -334,7 +334,7 @@ btnSubmitTest.addEventListener('click', () => {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
 
-  userAnswers[activeQuestion.id] = globalCanvas.getState();
+  userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
   currentIndex++;
   updateTaskProgress('test');
 
@@ -357,7 +357,7 @@ function showReviewItem() {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
 
-  const uAnswerImg = userAnswers[activeQuestion.id] || null;
+  const uAnswerImg = userAnswers[activeQuestion.id] || '';
 
   reviewQuestion.innerText = activeQuestion.question;
 
@@ -478,7 +478,7 @@ function finalizeReviewItem(isCorrect) {
   if (!activeQuestion) return;
   updateSrsMetrics(activeQuestion, isCorrect);
   if (!isCorrect) {
-    userAnswers[activeQuestion.id] = globalCanvas.getState();
+    userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
     wrongQuestions.push(activeQuestion);
   }
   goToNextReviewItem();
