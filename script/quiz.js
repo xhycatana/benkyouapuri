@@ -65,44 +65,22 @@ function switchPhase(newPhase) {
 }
 
 // --- ホーム画面の余白 ---
-// 上下の余白を左右の余白と同じ大きさにする。中身の高さは問題集の数などで変わるので、CSS だけでは決められない。
-// 横長の画面では、上下の余白の大きさまで左右を詰める（中身が横に広がる）。
-// 縦長の画面では、上の余白を左右の余白に合わせ、余った高さは下に回す。
-const HOME_MAX_WIDTH = 768;   // 縦長の画面での中身の最大幅（max-w-3xl）
+// 上下の余白を左右の余白と同じ大きさにする。中身の幅は最大 768px（max-w-3xl）で、左右の余白はその残り。
+// 横向きの画面では中身が画面に収まらなくなるが、そのぶんはスクロールし、スクロールしきった先の下の余白も同じにする。
+const HOME_MAX_WIDTH = 768;
 
 function fitHomeMargins() {
   if (currentPhase !== 'import') return;
   const W = window.innerWidth;
-  const H = window.innerHeight;
-  // phaseContainer は body の余白の内側にある。その分を差し引いて section の外側の余白を決める
+  // phaseContainer は body の余白の内側にある。画面の外枠にもともとある余白より小さくはできないので、それを最小にする
   const box = phaseContainer.getBoundingClientRect();
-
-  // 画面の外枠にもともとある余白より小さくはできないので、それを最小にする
-  const minMargin = box.top;
-  let margin = minMargin;
-  // 幅を変えると文字の折り返しで高さも変わるので、2回合わせる
-  for (let i = 0; i < 2; i++) {
-    const height = phaseImport.offsetHeight;
-    const byWidth = (W - HOME_MAX_WIDTH) / 2;
-    const byHeight = (H - height) / 2;
-    margin = Math.max(minMargin, Math.min(byWidth, byHeight));
-    phaseImport.style.maxWidth = Math.max(0, W - 2 * margin) + 'px';
-  }
+  const margin = Math.max(box.top, (W - HOME_MAX_WIDTH) / 2);
+  phaseImport.style.maxWidth = Math.max(0, W - 2 * margin) + 'px';
   phaseImport.style.marginTop = Math.max(0, margin - box.top) + 'px';
-  phaseImport.style.marginBottom = Math.max(0, margin - (H - box.bottom)) + 'px';
+  phaseImport.style.marginBottom = Math.max(0, margin - (window.innerHeight - box.bottom)) + 'px';
 }
 
 window.addEventListener('resize', fitHomeMargins);
-// 問題集の一覧を読み込み終えたときなど、中身の高さが変わったら合わせ直す
-if (window.ResizeObserver) {
-  let lastHomeHeight = 0;
-  new ResizeObserver(() => {
-    const h = phaseImport.offsetHeight;
-    if (Math.abs(h - lastHomeHeight) < 1) return;
-    lastHomeHeight = h;
-    fitHomeMargins();
-  }).observe(phaseImport);
-}
 
 function transitionPhase(actionAfterFadeOut) {
   // すでに暗転中（action の実行中）に呼ばれた場合は、さらに演出を重ねずにその場で実行する。
