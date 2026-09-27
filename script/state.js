@@ -4,8 +4,13 @@
 // --- 2. グローバルデータストア ---
 let originalList = [];        // 読み込まれた全データ（JSON構造拡張版）
 let currentList = [];         // 現在取り組んでいる対象リスト
-let userAnswers = {};         // 手書き画像キャッシュ
-let userHasDrawn = {};        // 描画フラグ
+let userAnswers = {};         // 手書きの答案。問題ごとに { images: [ページの画像], inked: [ページに書いたか] }
+let userHasDrawn = {};        // 描画フラグ（どれか1ページにでも書いたか）
+
+// いま開いている問題の答案のページ。キャンバスは1枚なので、開いていないページは画像で持つ
+let answerPages = [null];       // ページごとの画像（白紙は null。開いているページは古いままのことがある）
+let answerPageInked = [false];  // ページごとに何か書いたか
+let answerPageIndex = 0;        // 開いているページ
 let wrongQuestions = [];       // 間違えた問題リスト
 
 let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）

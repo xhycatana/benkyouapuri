@@ -26,7 +26,10 @@ function switchPhase(newPhase) {
   // 幅を絞ったままだと、左右の余白に指を置いてもスクロールできない。
   // 中身の幅は各画面の section 側（max-w-3xl など）で絞っている。
   phaseContainer.classList.toggle('max-w-4xl', !scrollable);
+  // 左側の余白は出題中の左のツールバーのぶん。ツールバーの無い画面では左右を揃える
+  ['pl-10', 'pr-2', 'md:pl-12', 'md:pr-4'].forEach((c) => phaseContainer.classList.toggle(c, !scrollable));
 
+  pageDivider.classList.add('hidden');
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
   phaseHelp.classList.add('hidden');
@@ -35,6 +38,7 @@ function switchPhase(newPhase) {
 
   if (newPhase === 'import') {
     phaseImport.classList.remove('hidden');
+    fitHomeMargins();
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
     globalCanvas.resetPalmRejection();
@@ -58,6 +62,46 @@ function switchPhase(newPhase) {
     leftControlsContainer.classList.remove('hidden');
     initReviewPhase();
   }
+}
+
+// --- ホーム画面の余白 ---
+// 上下の余白を左右の余白と同じ大きさにする。中身の高さは問題集の数などで変わるので、CSS だけでは決められない。
+// 横長の画面では、上下の余白の大きさまで左右を詰める（中身が横に広がる）。
+// 縦長の画面では、上の余白を左右の余白に合わせ、余った高さは下に回す。
+const HOME_MAX_WIDTH = 768;   // 縦長の画面での中身の最大幅（max-w-3xl）
+
+function fitHomeMargins() {
+  if (currentPhase !== 'import') return;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  // phaseContainer は body の余白の内側にある。その分を差し引いて section の外側の余白を決める
+  const box = phaseContainer.getBoundingClientRect();
+
+  // 画面の外枠にもともとある余白より小さくはできないので、それを最小にする
+  const minMargin = box.top;
+  let margin = minMargin;
+  // 幅を変えると文字の折り返しで高さも変わるので、2回合わせる
+  for (let i = 0; i < 2; i++) {
+    const height = phaseImport.offsetHeight;
+    const byWidth = (W - HOME_MAX_WIDTH) / 2;
+    const byHeight = (H - height) / 2;
+    margin = Math.max(minMargin, Math.min(byWidth, byHeight));
+    phaseImport.style.maxWidth = Math.max(0, W - 2 * margin) + 'px';
+  }
+  phaseImport.style.marginTop = Math.max(0, margin - box.top) + 'px';
+  phaseImport.style.marginBottom = Math.max(0, margin - (H - box.bottom)) + 'px';
+}
+
+window.addEventListener('resize', fitHomeMargins);
+// 問題集の一覧を読み込み終えたときなど、中身の高さが変わったら合わせ直す
+if (window.ResizeObserver) {
+  let lastHomeHeight = 0;
+  new ResizeObserver(() => {
+    const h = phaseImport.offsetHeight;
+    if (Math.abs(h - lastHomeHeight) < 1) return;
+    lastHomeHeight = h;
+    fitHomeMargins();
+  }).observe(phaseImport);
 }
 
 function transitionPhase(actionAfterFadeOut) {
@@ -287,6 +331,7 @@ function saveDisplaySettings() {
 function applyQuestionFontSize() {
   testQuestion.style.fontSize = displaySettings.questionFontSize + 'px';
   reviewQuestion.style.fontSize = displaySettings.questionFontSize + 'px';
+  placePageDivider();
 }
 
 function applyDisplaySettingsToUI() {
@@ -300,6 +345,186 @@ questionFontInput.addEventListener('input', function () {
   questionFontVal.textContent = displaySettings.questionFontSize + ' px';
   saveDisplaySettings();
   applyQuestionFontSize();
+});
+
+
+// --- 答案のページめくり（見開き） ---
+// 画面の左半分と右半分がそれぞれ1ページで、2ページずつ見える。めくると1ページずつ進むので、
+// 右にあったページが左に移り、1つ前のページを見ながら次のページに書ける。
+// 答案エリアをスクロールさせたり大きな1枚にしたりすると、iPad の Safari のキャンバスの
+// 大きさ・メモリの上限にぶつかるので、キャンバスは画面1枚のまま、見えていないページは画像にして取っておく。
+// answerPageIndex は左のページの番号。右のページは answerPageIndex + 1。
+
+// saved（提出済みの答案）が無ければ白紙2ページから始める
+function resetAnswerPages(saved) {
+  answerPages = saved ? saved.images.slice() : [];
+  answerPageInked = saved ? saved.inked.slice() : [];
+  while (answerPages.length < 2) {
+    answerPages.push(null);
+    answerPageInked.push(false);
+  }
+  answerPageIndex = 0;
+  globalCanvas.loadHalf(0, answerPages[0]);
+  globalCanvas.loadHalf(1, answerPages[1]);
+  updatePageControls();
+  placePageDivider();
+}
+
+// 見えている2ページをキャンバスから取り込み、全ページをまとめて返す
+function collectAnswerPages() {
+  [0, 1].forEach((side) => {
+    // 画像の読み込みが終わっていない間は、キャンバスに中身がまだ無いので取り込まない
+    if (globalCanvas.halfLoading[side]) return;
+    const page = answerPageIndex + side;
+    answerPages[page] = answerPageInked[page] ? globalCanvas.getHalfDataURL(side) : null;
+  });
+  return { images: answerPages.slice(), inked: answerPageInked.slice() };
+}
+
+// 1ページ進める・戻す
+function flipAnswerPage(step) {
+  const next = answerPageIndex + step;
+  if (next < 0) return;
+  collectAnswerPages();
+  const last = answerPages.length - 1;
+  if (step < 0 && last === answerPageIndex + 1 && last > 1 && !answerPageInked[last]) {
+    // 何も書いていない最後のページから戻るときは、そのページを消す（白紙のページが後ろに溜まらないように）
+    answerPages.pop();
+    answerPageInked.pop();
+  }
+  if (next + 1 >= answerPages.length) {
+    answerPages.push(null);
+    answerPageInked.push(false);
+  }
+  answerPageIndex = next;
+
+  if (globalCanvas.loading) {
+    // 読み込み途中の側があるときは、見えている中身を使わずに両側とも読み直す
+    globalCanvas.loadHalf(0, answerPages[next]);
+    globalCanvas.loadHalf(1, answerPages[next + 1]);
+  } else if (step > 0) {
+    globalCanvas.moveHalf(1, 0);
+    globalCanvas.loadHalf(1, answerPages[next + 1]);
+  } else {
+    globalCanvas.moveHalf(0, 1);
+    globalCanvas.loadHalf(0, answerPages[next]);
+  }
+  updatePageControls();
+}
+
+// 出題中・丸つけ中の両方にあるページ送りの表示を揃える。
+// 右のページが最後のページなら「次へ」は「ページを足す」になる。白紙のページの後ろには足せない。
+function updatePageControls() {
+  const total = answerPages.length;
+  const right = answerPageIndex + 1;
+  const onLast = right === total - 1;
+  const canPrev = answerPageIndex > 0;
+  const canNext = !onLast || answerPageInked[right];
+
+  document.querySelectorAll('.page-indicator').forEach((el) => {
+    el.textContent = (answerPageIndex + 1) + '-' + (right + 1) + ' / ' + total;
+  });
+  document.querySelectorAll('.page-prev-btn').forEach((btn) => {
+    btn.disabled = !canPrev;
+    btn.classList.toggle('opacity-30', !canPrev);
+  });
+  document.querySelectorAll('.page-next-btn').forEach((btn) => {
+    btn.disabled = !canNext;
+    btn.classList.toggle('opacity-30', !canNext);
+    btn.title = onLast ? 'ページを足す' : '次のページ';
+    btn.querySelector('.page-next-icon').classList.toggle('hidden', onLast);
+    btn.querySelector('.page-add-icon').classList.toggle('hidden', !onLast);
+  });
+}
+
+// 見開きの真ん中の区切り線。画面のちょうど真ん中に短く引く。
+// 問題文が長いときや解説があるときは、問題文とボタンにかからない範囲まで削る。
+// 問題文の長さ・丸つけの解説の有無・文字の大きさで削る量が変わるので、そのたびに置き直す。
+const PAGE_DIVIDER_GAP = 16;
+const PAGE_DIVIDER_RATIO = 0.07;   // 線の長さ（画面の高さに対する割合）
+
+function placePageDivider() {
+  const drawing = isDrawingPhase();
+  pageDivider.classList.toggle('hidden', !drawing);
+  if (!drawing) return;
+  const above = currentPhase === 'test' ? testQuestionBox : reviewInfoBox;
+  const below = currentPhase === 'test' ? btnSubmitTest : btnClearReviewCanvas;
+  const minTop = above.getBoundingClientRect().bottom + PAGE_DIVIDER_GAP;
+  const maxBottom = below.getBoundingClientRect().top - PAGE_DIVIDER_GAP;
+  const center = window.innerHeight / 2;
+  const half = window.innerHeight * PAGE_DIVIDER_RATIO / 2;
+  const top = Math.max(center - half, minTop);
+  const bottom = Math.min(center + half, maxBottom);
+  if (bottom - top < 4) {
+    pageDivider.classList.add('hidden');
+    return;
+  }
+  pageDivider.style.top = top + 'px';
+  pageDivider.style.height = (bottom - top) + 'px';
+}
+
+window.addEventListener('resize', placePageDivider);
+
+// どれか1ページにでも書いてあれば「書いた」とする
+function syncHasDrawn() {
+  const activeQuestion = currentList[currentIndex];
+  if (!activeQuestion) return;
+  const any = answerPageInked.some(Boolean);
+  userHasDrawn[activeQuestion.id] = any;
+  if (currentPhase === 'review') setReviewCorrectButtonsEnabled(any);
+}
+
+// キャンバスの左(0)・右(1)のページに線が引かれたときに呼ばれる
+function noteAnswerDrawn(side) {
+  if (!currentList[currentIndex]) return;
+  const page = answerPageIndex + side;
+  if (!answerPageInked[page]) {
+    answerPageInked[page] = true;
+    updatePageControls();
+  }
+  syncHasDrawn();
+}
+
+// 手のひらの接触を取り消すときのために、指で描き始める直前の状態を返す
+function currentAnswerDrawnState() {
+  const activeQuestion = currentList[currentIndex];
+  if (!activeQuestion) return null;
+  return {
+    id: activeQuestion.id,
+    page: answerPageIndex,
+    inked: [answerPageInked[answerPageIndex] === true, answerPageInked[answerPageIndex + 1] === true]
+  };
+}
+
+function restoreAnswerDrawnState(state) {
+  const activeQuestion = currentList[currentIndex];
+  if (!activeQuestion || activeQuestion.id !== state.id || state.page !== answerPageIndex) return;
+  answerPageInked[state.page] = state.inked[0];
+  answerPageInked[state.page + 1] = state.inked[1];
+  syncHasDrawn();
+  updatePageControls();
+}
+
+// 消去ボタンは、見えている2ページを消す
+function clearCurrentAnswerPage() {
+  globalCanvas.clear();
+  answerPageInked[answerPageIndex] = false;
+  answerPageInked[answerPageIndex + 1] = false;
+  syncHasDrawn();
+  updatePageControls();
+}
+
+document.querySelectorAll('.page-prev-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (isTransitioning || btn.disabled) return;
+    flipAnswerPage(-1);
+  });
+});
+document.querySelectorAll('.page-next-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (isTransitioning || btn.disabled) return;
+    flipAnswerPage(1);
+  });
 });
 
 
@@ -321,12 +546,12 @@ function showQuestion() {
 
   globalCanvas.clear();
   globalCanvas.resizeCanvas();
+  resetAnswerPages(null);
 }
 
 btnClearTestCanvas.addEventListener('click', () => {
   if (isTransitioning) return; 
-  globalCanvas.clear();
-  if (currentList[currentIndex]) userHasDrawn[currentList[currentIndex].id] = false;
+  clearCurrentAnswerPage();
 });
 
 btnSubmitTest.addEventListener('click', () => {
@@ -334,7 +559,7 @@ btnSubmitTest.addEventListener('click', () => {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
 
-  userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
+  userAnswers[activeQuestion.id] = collectAnswerPages();
   currentIndex++;
   updateTaskProgress('test');
 
@@ -356,8 +581,6 @@ function showReviewItem() {
   updateTaskProgress('review');
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
-
-  const uAnswerImg = userAnswers[activeQuestion.id] || '';
 
   reviewQuestion.innerText = activeQuestion.question;
 
@@ -381,7 +604,7 @@ function showReviewItem() {
     reviewModelAnswer.innerText = currentAnswerItems[0] || activeQuestion.answer;
   }
 
-  globalCanvas.loadState(uAnswerImg);
+  resetAnswerPages(userAnswers[activeQuestion.id] || null);
 
   if (activeQuestion.commentary) {
     reviewCommentary.innerText = activeQuestion.commentary;
@@ -392,6 +615,7 @@ function showReviewItem() {
 
   const hasDrawn = userHasDrawn[activeQuestion.id] === true;
   setReviewCorrectButtonsEnabled(hasDrawn);
+  placePageDivider();   // 解説の有無で問題文の欄の高さが変わった後に置き直す
 }
 
 // 「合ってた」系のボタン（一括・1項目ずつ、どちらも）を、まだ何も
@@ -478,7 +702,7 @@ function finalizeReviewItem(isCorrect) {
   if (!activeQuestion) return;
   updateSrsMetrics(activeQuestion, isCorrect);
   if (!isCorrect) {
-    userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
+    userAnswers[activeQuestion.id] = collectAnswerPages();
     wrongQuestions.push(activeQuestion);
   }
   goToNextReviewItem();
@@ -503,12 +727,7 @@ btnReviewNext.addEventListener('click', () => {
 
 btnClearReviewCanvas.addEventListener('click', () => {
   if (isTransitioning) return;
-  globalCanvas.clear();
-  const activeQuestion = currentList[currentIndex];
-  if (activeQuestion) {
-    userHasDrawn[activeQuestion.id] = false;
-    setReviewCorrectButtonsEnabled(false);
-  }
+  clearCurrentAnswerPage();
 });
 
 function goToNextReviewItem() {

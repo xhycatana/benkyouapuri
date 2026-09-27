@@ -59,7 +59,11 @@ class GlobalHandwritingCanvas {
     // パームリジェクション用の状態
     this.hasSeenPen = false;          // ペン入力を検知したか
     this.touchSnapshot = null;        // 指ストローク開始前のキャンバス退避
-    this.touchDrawnState = null;      // 指ストローク開始前の userHasDrawn の値
+    this.touchDrawnState = null;      // 指ストローク開始前の、そのページに書いたかどうか
+    // 見開きの左右それぞれで、ページを開くたびに増やす番号。画像の読み込みが終わる前に
+    // 別のページへ移ったとき、古いページの画像が後から描かれてしまわないようにする
+    this.loadTokens = [0, 0];
+    this.halfLoading = [false, false];
 
     this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
     this.canvas.addEventListener('pointermove', (e) => this.draw(e));
@@ -160,10 +164,7 @@ class GlobalHandwritingCanvas {
       this.touchSnapshot = snap;
     } catch (err) { return; }
 
-    const activeQuestion = currentList[currentIndex];
-    this.touchDrawnState = activeQuestion
-      ? { id: activeQuestion.id, wasDrawn: userHasDrawn[activeQuestion.id] === true }
-      : null;
+    this.touchDrawnState = currentAnswerDrawnState();
   }
 
   // 進行中の指ストロークを破棄し、退避しておいた状態へ巻き戻す
@@ -183,14 +184,8 @@ class GlobalHandwritingCanvas {
     this.ctx.restore();
     this.applyPenConfig();
 
-    // 手のひらの接触だけで「解答済み」扱いになっていた場合は元に戻す
-    if (drawnState && !drawnState.wasDrawn) {
-      delete userHasDrawn[drawnState.id];
-      const activeQuestion = currentList[currentIndex];
-      if (currentPhase === 'review' && activeQuestion && activeQuestion.id === drawnState.id) {
-        setReviewCorrectButtonsEnabled(false);
-      }
-    }
+    // 手のひらの接触だけで「書いた」扱いになっていた場合は元に戻す
+    if (drawnState) restoreAnswerDrawnState(drawnState);
   }
 
   // --- ストローク管理 ---
@@ -251,14 +246,13 @@ class GlobalHandwritingCanvas {
 
     e.preventDefault();
 
-    for (const pos of pointerSamples(e, ev => this.getPointerPos(ev))) this.extendStroke(pos);
-
-    if (currentList[currentIndex]) {
-      userHasDrawn[currentList[currentIndex].id] = true;
-      if (currentPhase === 'review') {
-        setReviewCorrectButtonsEnabled(true);
-      }
+    // 見開きの左右どちらのページに書いたか（真ん中をまたいだ線は両方）
+    const sides = [false, false];
+    for (const pos of pointerSamples(e, ev => this.getPointerPos(ev))) {
+      this.extendStroke(pos);
+      sides[this.sideAt(pos.x)] = true;
     }
+    sides.forEach((drawn, side) => { if (drawn) noteAnswerDrawn(side); });
   }
 
   extendStroke(pos) {
@@ -298,6 +292,8 @@ class GlobalHandwritingCanvas {
 
   clear() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.loadTokens = this.loadTokens.map(t => t + 1);
+    this.halfLoading = [false, false];
     this.stroke = null;
     this.touchSnapshot = null;
     this.touchDrawnState = null;
@@ -310,23 +306,84 @@ class GlobalHandwritingCanvas {
     this.ctx.lineJoin = 'round';
   }
 
-  getDataURL() {
-    return this.canvas.toDataURL();
+  // --- 見開き ---
+  // キャンバスは画面1枚で、左半分と右半分がそれぞれ1ページ。0 が左、1 が右。
+
+  get loading() {
+    return this.halfLoading[0] || this.halfLoading[1];
   }
 
-  loadState(dataURL) {
-    this.clear();
+  sideAt(x) {
+    return x < this.canvas.clientWidth / 2 ? 0 : 1;
+  }
+
+  // 半分の範囲（キャンバスの実ピクセル）
+  halfRect(side) {
+    const left = Math.floor(this.canvas.width / 2);
+    return side === 0
+      ? { x: 0, w: left, h: this.canvas.height }
+      : { x: left, w: this.canvas.width - left, h: this.canvas.height };
+  }
+
+  clearHalf(side) {
+    const r = this.halfRect(side);
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.clearRect(r.x, 0, r.w, r.h);
+    this.ctx.restore();
+    this.loadTokens[side]++;
+    this.halfLoading[side] = false;
+    this.stroke = null;
+    this.touchSnapshot = null;
+    this.touchDrawnState = null;
+  }
+
+  getHalfDataURL(side) {
+    const r = this.halfRect(side);
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.max(1, r.w);
+    tmp.height = Math.max(1, r.h);
+    try { tmp.getContext('2d').drawImage(this.canvas, r.x, 0, r.w, r.h, 0, 0, r.w, r.h); } catch (err) {}
+    return tmp.toDataURL();
+  }
+
+  // 片側の中身をもう片側へそのまま移し、元の側は白紙にする（めくったとき、見えていたページを読み込み直さずに済む）
+  moveHalf(from, to) {
+    const src = this.halfRect(from);
+    const dst = this.halfRect(to);
+    const tmp = document.createElement('canvas');
+    tmp.width = Math.max(1, src.w);
+    tmp.height = Math.max(1, src.h);
+    try { tmp.getContext('2d').drawImage(this.canvas, src.x, 0, src.w, src.h, 0, 0, src.w, src.h); } catch (err) {}
+    this.clearHalf(to);
+    this.clearHalf(from);
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    try { this.ctx.drawImage(tmp, 0, 0, src.w, src.h, dst.x, 0, dst.w, dst.h); } catch (err) {}
+    this.ctx.restore();
+    this.applyPenConfig();
+  }
+
+  // 片側を白紙にしてから、ページの画像を読み込んで描く（null なら白紙のまま）
+  loadHalf(side, dataURL) {
+    this.clearHalf(side);
     if (!dataURL) return;
+    const token = this.loadTokens[side];
+    this.halfLoading[side] = true;
     const img = new Image();
     img.onload = () => {
-      const dpr = window.devicePixelRatio || 1;
-      if (this.canvas.width > 0 && this.canvas.height > 0) {
-        try {
-          this.ctx.drawImage(img, 0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
-        } catch (err) {}
-      }
+      if (token !== this.loadTokens[side]) return;   // もう別のページを開いている
+      this.halfLoading[side] = false;
+      const r = this.halfRect(side);
+      // 読み込み中にもう書き始めていた線を消さないよう、画像はその下に敷く
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.globalCompositeOperation = 'destination-over';
+      try { this.ctx.drawImage(img, r.x, 0, r.w, r.h); } catch (err) {}
+      this.ctx.restore();
       this.applyPenConfig();
     };
+    img.onerror = () => { if (token === this.loadTokens[side]) this.halfLoading[side] = false; };
     img.src = dataURL;
   }
 }

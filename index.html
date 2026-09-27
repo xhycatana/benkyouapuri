@@ -11,12 +11,15 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.30.0">
+  <link rel="stylesheet" href="style.css?v=6.31.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
   <!-- 全画面手書きキャンバス -->
   <canvas id="app-global-canvas" class="absolute inset-0 w-full h-full block cursor-crosshair z-0 touch-none"></canvas>
+
+  <!-- 見開きの区切り線（画面のちょうど真ん中。上端と長さは placePageDivider() が決める） -->
+  <div id="page-divider" class="hidden absolute left-1/2 w-px bg-slate-300 z-10 pointer-events-none"></div>
 
   <!-- 左側ツールバー（操作・ペン設定） -->
   <div id="left-controls-container" class="hidden absolute left-2 md:left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col space-y-3 pointer-events-auto">
@@ -166,7 +169,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.30.0</span>
+              <span class="cursor-default select-none font-mono">v6.31.0</span>
             </div>
           </div>
         </section>
@@ -251,13 +254,23 @@
 
           <div id="test-card-container" class="bg-transparent rounded-none flex-grow flex flex-col justify-between overflow-hidden w-full">
             
-            <div class="p-2 md:p-4">
+            <div id="test-question-box" class="p-2 md:p-4">
               <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">QUESTION</span>
               <div id="test-question" class="font-bold text-slate-900 mt-1 leading-relaxed">
               </div>
             </div>
 
             <div class="p-2 md:p-4 mt-auto flex justify-center items-center space-x-4 pointer-events-none">
+              <div class="pointer-events-auto h-9 md:h-10 flex items-center bg-white border border-black shadow-sm">
+                <button type="button" class="page-prev-btn w-9 md:w-10 h-full flex items-center justify-center hover:bg-slate-50 focus:outline-none" title="前のページ">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <span class="page-indicator w-16 text-center text-xs font-mono text-slate-600">1 / 1</span>
+                <button type="button" class="page-next-btn w-9 md:w-10 h-full flex items-center justify-center hover:bg-slate-50 focus:outline-none" title="ページを足す">
+                  <svg class="page-next-icon hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+                  <svg class="page-add-icon w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14" /></svg>
+                </button>
+              </div>
               <button id="btn-clear-test-canvas" class="pointer-events-auto w-28 md:w-36 h-9 md:h-10 flex items-center justify-center bg-white hover:bg-slate-50 text-black border border-black transition-colors shadow-sm focus:outline-none rounded-none" title="消去">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -295,7 +308,7 @@
 
           <div id="review-card-container" class="bg-transparent rounded-none flex-grow flex flex-col justify-between overflow-hidden w-full">
             
-            <div class="p-2 md:p-4 space-y-3">
+            <div id="review-info-box" class="p-2 md:p-4 space-y-3">
               <div class="text-base md:text-lg font-bold text-slate-800">
                 <span>問題：</span><span id="review-question"></span>
               </div>
@@ -316,6 +329,17 @@
             <div id="review-control-container" class="p-2 md:p-4 mt-auto pointer-events-none flex justify-center">
               <div class="flex justify-center space-x-4 pointer-events-none">
                 
+                <div class="pointer-events-auto h-9 md:h-10 flex items-center bg-white border border-black shadow-sm">
+                  <button type="button" class="page-prev-btn w-9 md:w-10 h-full flex items-center justify-center hover:bg-slate-50 focus:outline-none" title="前のページ">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                  </button>
+                  <span class="page-indicator w-16 text-center text-xs font-mono text-slate-600">1 / 1</span>
+                  <button type="button" class="page-next-btn w-9 md:w-10 h-full flex items-center justify-center hover:bg-slate-50 focus:outline-none" title="ページを足す">
+                    <svg class="page-next-icon hidden w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" /></svg>
+                    <svg class="page-add-icon w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14" /></svg>
+                  </button>
+                </div>
+
                 <button id="btn-clear-review-canvas" class="pointer-events-auto w-24 md:w-28 h-9 md:h-10 flex items-center justify-center bg-white hover:bg-slate-50 text-black border border-black transition-colors shadow-sm focus:outline-none rounded-none" title="消去">
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -365,6 +389,8 @@
             <h3 class="text-sm font-bold text-slate-900 border-b border-black pb-2 mb-2">1. 学習の流れ</h3>
             <p>ホーム画面で問題集を選び、「選択した問題集で開始」を押します。</p>
             <p>画面全体に手書きで答え、「決定」で次の問題へ進みます。全問書き終えると丸つけに移ります。</p>
+            <p>画面は真ん中の線で左右2ページに分かれていて、左のページから書いていきます。書ききれないときは、下のページ送りの「＋」でページを足せます。めくると1ページずつ進むので、右にあったページが左に移り、1つ前のページを見ながら続きを書けます。「‹」「›」で前後に行き来でき、丸つけのときも同じようにめくって見られます。</p>
+            <p>消去ボタンは、見えている2ページを消します。何も書いていないページの後ろにはページを足せず、白紙の最後のページは前に戻ると消えます。</p>
             <p>模範解答と解説を見て、自分で ⭕️（合ってた）／ ❌（間違えた）を押します。</p>
             <p>❌ を押した問題だけ、正解するまでその場で繰り返し出題されます。全問 ⭕️ になったら次のグループへ、なければホーム画面へ戻ります。</p>
             <p class="text-slate-400">途中でやめたいときは、出題・丸つけの画面の左上の戻るボタンでホーム画面に戻れます。それまでに丸つけした問題の成績は保存されています。</p>
@@ -433,7 +459,7 @@
 
           <div class="bg-white border border-black p-4 space-y-2 text-xs text-slate-700 leading-relaxed">
             <h3 class="text-sm font-bold text-slate-900 border-b border-black pb-2 mb-2">6. 手書きについて</h3>
-            <p>Apple Pencil を検知すると、以降そのページでは指の接触を無視します（パームリジェクション）。ペンより先に手のひらが触れてしまった線も、ペンが触れた時点で取り消されます。</p>
+            <p>Apple Pencil を検知すると、以降ホーム画面に戻るまで指の接触を無視します（パームリジェクション）。ペンより先に手のひらが触れてしまった線も、ペンが触れた時点で取り消されます。</p>
             <p>ペンを一度も使わなければ、そのまま指で描けます。ボタンは常に指でも押せます。</p>
             <p>画面を回転すると、書いた内容は新しい画面の大きさに合わせて引き伸ばされます（線の形が縦横に伸び縮みします）。</p>
             <div class="pt-2 space-y-1">
@@ -527,16 +553,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.30.0"></script>
-  <script src="script/dom.js?v=6.30.0"></script>
-  <script src="script/util.js?v=6.30.0"></script>
-  <script src="script/memory.js?v=6.30.0"></script>
-  <script src="script/api.js?v=6.30.0"></script>
-  <script src="script/progress.js?v=6.30.0"></script>
-  <script src="script/canvas.js?v=6.30.0"></script>
-  <script src="script/quiz.js?v=6.30.0"></script>
-  <script src="script/library.js?v=6.30.0"></script>
-  <script src="script/upload.js?v=6.30.0"></script>
-  <script src="script/app.js?v=6.30.0"></script>
+  <script src="script/state.js?v=6.31.0"></script>
+  <script src="script/dom.js?v=6.31.0"></script>
+  <script src="script/util.js?v=6.31.0"></script>
+  <script src="script/memory.js?v=6.31.0"></script>
+  <script src="script/api.js?v=6.31.0"></script>
+  <script src="script/progress.js?v=6.31.0"></script>
+  <script src="script/canvas.js?v=6.31.0"></script>
+  <script src="script/quiz.js?v=6.31.0"></script>
+  <script src="script/library.js?v=6.31.0"></script>
+  <script src="script/upload.js?v=6.31.0"></script>
+  <script src="script/app.js?v=6.31.0"></script>
 </body>
 </html>
