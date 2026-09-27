@@ -550,7 +550,7 @@ api/health.js       設定の診断
 **全部を同じ値に揃えてください。**揃っているかは次で確認できます。
 
 ```bash
-grep -o '6\.17\.0' index.html | wc -l
+grep -o '6\.18\.0' index.html | wc -l
 ```
 
 `13` 以外が出たら、揃っていません。

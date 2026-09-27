@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.17.0">
+  <link rel="stylesheet" href="style.css?v=6.18.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -80,41 +80,41 @@
       <div id="phase-container" class="w-full h-full flex flex-col justify-center max-w-4xl pl-10 pr-2 md:pl-12 md:pr-4"> 
 
         <!-- インポート・設定画面 (Phase Import) -->
-        <section id="phase-import" class="space-y-6 pointer-events-auto w-full mx-auto my-auto max-w-lg">
+        <section id="phase-import" class="space-y-6 pointer-events-auto w-full mx-auto my-auto max-w-3xl">
           <div class="text-center space-y-2 mb-6">
             <h2 class="text-2xl font-bold text-slate-850 tracking-tight">暗記アプリケーション</h2>
             <p class="text-xs text-slate-400">長期記憶アルゴリズム ＋ 短期記憶ループ学習</p>
           </div>
 
           <div class="bg-white border border-black p-4 space-y-4">
-            <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">長期記憶（確率の低い順）優先選出</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-srs-sort" class="sr-only peer" checked>
                 <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
               </label>
             </div>
-            <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">出題順をランダムにする</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-random" class="sr-only peer">
                 <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
               </label>
             </div>
-            <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">問題と答えを逆にする</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" id="check-swap" class="sr-only peer">
                 <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
               </label>
             </div>
-            <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center justify-between text-sm">
               <div>
                 <span class="font-bold text-slate-700">出題する上限</span>
-                <p class="text-[10px] text-slate-400">優先度の高い順に、この数だけ解きます（0で全部）</p>
+                <p class="text-xs text-slate-400">優先度の高い順に、この数だけ解きます（0で全部）</p>
               </div>
               <div class="flex items-center space-x-2">
-                <input type="number" id="input-question-limit" value="0" min="0" class="w-16 p-1 border border-black text-center focus:outline-none font-bold" title="出題数の上限">
+                <input type="number" id="input-question-limit" value="0" min="0" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="出題数の上限">
                 <span class="text-slate-400">問まで</span>
               </div>
             </div>
@@ -124,21 +124,21 @@
           <!-- 問題集の選択 -->
           <div id="library-box" class="bg-white border border-black p-4 space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-700">問題集から選ぶ</span>
+              <span class="text-sm font-bold text-slate-700">問題集から選ぶ</span>
               <div class="flex items-center space-x-3">
-                <button id="btn-library-reload" class="text-[10px] text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
-                <button id="btn-open-upload" class="px-2 py-1 border border-black text-[10px] font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
+                <button id="btn-library-reload" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
+                <button id="btn-open-upload" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
               </div>
             </div>
 
             <div id="library-tags" class="flex flex-wrap gap-1"></div>
-            <div id="library-tree" class="max-h-56 overflow-y-auto border border-slate-200 p-2 text-xs">
-              <p class="text-[10px] text-slate-400">読み込み中…</p>
+            <div id="library-tree" class="max-h-[28rem] overflow-y-auto border border-slate-200 p-2 text-sm">
+              <p class="text-xs text-slate-400">読み込み中…</p>
             </div>
 
             <div class="flex items-center justify-between">
-              <span id="library-selected" class="text-[10px] text-slate-400">未選択</span>
-              <button id="btn-start-selected" class="px-4 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
+              <span id="library-selected" class="text-xs text-slate-400">未選択</span>
+              <button id="btn-start-selected" class="px-5 py-2.5 bg-black text-white text-sm font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
                 選択した問題集で開始
               </button>
             </div>
@@ -163,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.17.0</span>
+              <span class="cursor-default select-none font-mono">v6.18.0</span>
             </div>
           </div>
         </section>
@@ -499,16 +499,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.17.0"></script>
-  <script src="script/dom.js?v=6.17.0"></script>
-  <script src="script/util.js?v=6.17.0"></script>
-  <script src="script/memory.js?v=6.17.0"></script>
-  <script src="script/api.js?v=6.17.0"></script>
-  <script src="script/progress.js?v=6.17.0"></script>
-  <script src="script/canvas.js?v=6.17.0"></script>
-  <script src="script/quiz.js?v=6.17.0"></script>
-  <script src="script/library.js?v=6.17.0"></script>
-  <script src="script/upload.js?v=6.17.0"></script>
-  <script src="script/app.js?v=6.17.0"></script>
+  <script src="script/state.js?v=6.18.0"></script>
+  <script src="script/dom.js?v=6.18.0"></script>
+  <script src="script/util.js?v=6.18.0"></script>
+  <script src="script/memory.js?v=6.18.0"></script>
+  <script src="script/api.js?v=6.18.0"></script>
+  <script src="script/progress.js?v=6.18.0"></script>
+  <script src="script/canvas.js?v=6.18.0"></script>
+  <script src="script/quiz.js?v=6.18.0"></script>
+  <script src="script/library.js?v=6.18.0"></script>
+  <script src="script/upload.js?v=6.18.0"></script>
+  <script src="script/app.js?v=6.18.0"></script>
 </body>
 </html>

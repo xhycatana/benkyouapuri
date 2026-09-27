@@ -16,7 +16,7 @@ let closedFolders = {};       // 閉じているフォルダ（既定は開い�
 function setTreeMessage(text, isError) {
   libraryTree.innerHTML = '';
   const p = document.createElement('p');
-  p.className = isError ? 'text-[10px] text-red-600' : 'text-[10px] text-slate-400';
+  p.className = isError ? 'text-xs text-red-600' : 'text-xs text-slate-400';
   p.textContent = text;
   libraryTree.appendChild(p);
 }
@@ -65,7 +65,7 @@ function renderTags() {
   tags.forEach(function (t) {
     const on = activeTags.indexOf(t) !== -1;
     const b = document.createElement('button');
-    b.className = 'px-2 py-0.5 text-[10px] border focus:outline-none ' +
+    b.className = 'px-2.5 py-1 text-xs border focus:outline-none ' +
       (on ? 'bg-black text-white border-black'
           : 'bg-white text-slate-500 border-slate-300 hover:border-black');
     b.textContent = t;
@@ -105,7 +105,7 @@ function renderNode(node, container, depth) {
     const isClosed = closedFolders[f.key] === true;
 
     const row = document.createElement('button');
-    row.className = 'w-full flex items-center text-left py-0.5 hover:bg-slate-50 focus:outline-none';
+    row.className = 'w-full flex items-center text-left py-1.5 hover:bg-slate-50 focus:outline-none';
     row.style.paddingLeft = (depth * 12) + 'px';
 
     const mark = document.createElement('span');
@@ -129,13 +129,13 @@ function renderNode(node, container, depth) {
 
   node.items.forEach(function (s) {
     const row = document.createElement('label');
-    row.className = 'flex items-center py-0.5 cursor-pointer hover:bg-slate-50';
+    row.className = 'flex items-center py-1.5 cursor-pointer hover:bg-slate-50';
     row.style.paddingLeft = (depth * 12 + 16) + 'px';
 
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = selectedPaths.indexOf(s.path) !== -1;
-    box.className = 'mr-2 accent-black';
+    box.className = 'mr-2 w-5 h-5 accent-black';
     box.addEventListener('change', function () {
       const at = selectedPaths.indexOf(s.path);
       if (box.checked) { if (at === -1) selectedPaths.push(s.path); }
@@ -148,11 +148,11 @@ function renderNode(node, container, depth) {
     label.textContent = s.title || s.path.split('/').pop();
 
     const count = document.createElement('span');
-    count.className = 'ml-2 text-[10px] text-slate-400';
+    count.className = 'ml-2 text-xs text-slate-400';
     count.textContent = (s.count || 0) + '問';
 
     const del = document.createElement('button');
-    del.className = 'ml-auto px-2 text-[11px] text-slate-300 hover:text-red-600 focus:outline-none';
+    del.className = 'ml-auto px-2 text-xs text-slate-300 hover:text-red-600 focus:outline-none';
     del.textContent = '×';
     del.title = 'この問題集を削除';
     del.addEventListener('click', function (e) {
