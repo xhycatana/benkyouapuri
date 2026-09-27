@@ -104,10 +104,15 @@ class GlobalHandwritingCanvas {
     this.cssWidth = 0;
     this.cssHeight = 0;
 
-    this.resizeTimeout = null;
+    this.settleFrame = null;      // 見張りのために予約した次のコマ
+    this.settleStart = 0;         // 最後に回転・大きさの変化を知らされた時刻
+    this.settleLastKey = null;    // 前のコマで読んだ向きと大きさ
     const scheduleResize = () => {
-      clearTimeout(this.resizeTimeout);
-      this.resizeTimeout = setTimeout(() => this.resizeWhenSettled(0), 100);
+      this.settleStart = performance.now();
+      this.settleLastKey = null;
+      if (this.settleFrame === null) {
+        this.settleFrame = requestAnimationFrame(() => this.resizeWhenSettled());
+      }
     };
     window.addEventListener('resize', scheduleResize);
     // 横向きから逆の横向きへ180度回したときは画面の大きさが変わらず resize が来ないので、向きの変化も見る
@@ -117,17 +122,24 @@ class GlobalHandwritingCanvas {
   // 回転の途中では、向き（window.orientation）と画面の大きさの更新がずれて届くことがある。
   // 食い違った瞬間に描き直すと、計算がずれたうえに「回転は処理済み」と記録してしまい、
   // 正しい大きさが届いても直らない（iPad実機で、正しく残ったり残らなかったりした原因）。
-  // 横向きなのに縦長、のように食い違っている間は描き直さず、揃うまで待つ。
+  // そこで、描画の1コマごとに向きと大きさを読み、次の2つを満たしたらすぐ描き直す。
+  //   ・横向きなのに縦長、のような食い違いが無い
+  //   ・2コマ続けて同じ値（一瞬だけ出た途中の値を、確定した値と取り違えないため）
   // 3秒待っても揃わないとき（画面分割で横向きなのに縦長の窓、など）は、回転の補正をせずに描き直す。
   // 食い違った大きさのまま回転させると、線が画面の外へ飛んで消えてしまうため。
-  resizeWhenSettled(attempt) {
+  resizeWhenSettled() {
+    this.settleFrame = null;
     const o = screenOrientation();
     const w = window.innerWidth, h = window.innerHeight;
     const settled = (o === null) || ((o === 90 || o === 270) ? w >= h : w <= h);
-    if (!settled && attempt < 30) {
-      this.resizeTimeout = setTimeout(() => this.resizeWhenSettled(attempt + 1), 100);
+    const key = o + ':' + w + 'x' + h;
+    const stable = settled && key === this.settleLastKey;
+    this.settleLastKey = key;
+    if (!stable && performance.now() - this.settleStart < 3000) {
+      this.settleFrame = requestAnimationFrame(() => this.resizeWhenSettled());
       return;
     }
+    this.settleLastKey = null;
     this.resizeCanvas(settled);
   }
 
