@@ -105,20 +105,44 @@ class GlobalHandwritingCanvas {
     this.cssHeight = 0;
 
     this.resizeTimeout = null;
-    window.addEventListener('resize', () => {
+    const scheduleResize = () => {
       clearTimeout(this.resizeTimeout);
-      this.resizeTimeout = setTimeout(() => this.resizeCanvas(), 100);
-    });
+      this.resizeTimeout = setTimeout(() => this.resizeWhenSettled(0), 100);
+    };
+    window.addEventListener('resize', scheduleResize);
+    // 横向きから逆の横向きへ180度回したときは画面の大きさが変わらず resize が来ないので、向きの変化も見る
+    window.addEventListener('orientationchange', scheduleResize);
   }
 
-  resizeCanvas() {
+  // 回転の途中では、向き（window.orientation）と画面の大きさの更新がずれて届くことがある。
+  // 食い違った瞬間に描き直すと、計算がずれたうえに「回転は処理済み」と記録してしまい、
+  // 正しい大きさが届いても直らない（iPad実機で、正しく残ったり残らなかったりした原因）。
+  // 横向きなのに縦長、のように食い違っている間は描き直さず、揃うまで待つ。
+  // 3秒待っても揃わないとき（画面分割で横向きなのに縦長の窓、など）は、回転の補正をせずに描き直す。
+  // 食い違った大きさのまま回転させると、線が画面の外へ飛んで消えてしまうため。
+  resizeWhenSettled(attempt) {
+    const o = screenOrientation();
+    const w = window.innerWidth, h = window.innerHeight;
+    const settled = (o === null) || ((o === 90 || o === 270) ? w >= h : w <= h);
+    if (!settled && attempt < 30) {
+      this.resizeTimeout = setTimeout(() => this.resizeWhenSettled(attempt + 1), 100);
+      return;
+    }
+    this.resizeCanvas(settled);
+  }
+
+  resizeCanvas(allowRotation = true) {
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
 
     const tempCanvas = document.createElement('canvas');
     let hasContent = false;
-    const from = { orientation: this.orientation, w: this.cssWidth, h: this.cssHeight };
+    // 補正しないときは、書いたときの向きを今の向きと同じ扱いにする（＝左上基準で置き直すだけ）
+    const from = {
+      orientation: allowRotation ? this.orientation : screenOrientation(),
+      w: this.cssWidth, h: this.cssHeight
+    };
 
     if (this.canvas.width > 0 && this.canvas.height > 0 && from.w > 0 && from.h > 0) {
       tempCanvas.width = this.canvas.width;
