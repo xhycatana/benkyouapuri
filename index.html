@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.16.0">
+  <link rel="stylesheet" href="style.css?v=6.17.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -163,7 +163,7 @@
                 使い方
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.16.0</span>
+              <span class="cursor-default select-none font-mono">v6.17.0</span>
             </div>
           </div>
         </section>
@@ -293,8 +293,12 @@
                 <span>問題：</span><span id="review-question"></span>
               </div>
 
-              <div class="text-base md:text-lg font-bold text-black">
+              <div id="review-model-answer-single" class="text-base md:text-lg font-bold text-black">
                 <span>模範解答：</span><span id="review-model-answer"></span>
+              </div>
+
+              <div id="review-model-answer-list" class="hidden space-y-1">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">模範解答（1つずつ判定）</p>
               </div>
 
               <div id="review-commentary-box" class="text-xs md:text-sm text-slate-500 leading-relaxed">
@@ -320,6 +324,12 @@
                 <button id="btn-self-correct" class="pointer-events-auto w-28 md:w-32 h-9 md:h-10 flex items-center justify-center bg-white hover:bg-slate-50 text-black border border-black transition-colors shadow-sm focus:outline-none rounded-none" title="合ってた">
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                     <circle cx="12" cy="12" r="8" />
+                  </svg>
+                </button>
+
+                <button id="btn-review-next" class="hidden pointer-events-auto w-28 md:w-32 h-9 md:h-10 flex items-center justify-center bg-white hover:bg-slate-50 text-black border border-black transition-colors shadow-sm focus:outline-none rounded-none" title="次へ">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                   </svg>
                 </button>
 
@@ -489,16 +499,16 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.16.0"></script>
-  <script src="script/dom.js?v=6.16.0"></script>
-  <script src="script/util.js?v=6.16.0"></script>
-  <script src="script/memory.js?v=6.16.0"></script>
-  <script src="script/api.js?v=6.16.0"></script>
-  <script src="script/progress.js?v=6.16.0"></script>
-  <script src="script/canvas.js?v=6.16.0"></script>
-  <script src="script/quiz.js?v=6.16.0"></script>
-  <script src="script/library.js?v=6.16.0"></script>
-  <script src="script/upload.js?v=6.16.0"></script>
-  <script src="script/app.js?v=6.16.0"></script>
+  <script src="script/state.js?v=6.17.0"></script>
+  <script src="script/dom.js?v=6.17.0"></script>
+  <script src="script/util.js?v=6.17.0"></script>
+  <script src="script/memory.js?v=6.17.0"></script>
+  <script src="script/api.js?v=6.17.0"></script>
+  <script src="script/progress.js?v=6.17.0"></script>
+  <script src="script/canvas.js?v=6.17.0"></script>
+  <script src="script/quiz.js?v=6.17.0"></script>
+  <script src="script/library.js?v=6.17.0"></script>
+  <script src="script/upload.js?v=6.17.0"></script>
+  <script src="script/app.js?v=6.17.0"></script>
 </body>
 </html>

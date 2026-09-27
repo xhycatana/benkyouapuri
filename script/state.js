@@ -9,6 +9,9 @@ let userHasDrawn = {};        // 描画フラグ
 let wrongQuestions = [];       // 間違えた問題リスト
 
 let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）
+
+let currentAnswerItems = [];        // 丸つけ中の答えを「／」で分けたもの（1件なら通常表示）
+let currentAnswerItemResults = [];  // 上の各項目の判定。true/false、未判定は undefined
 let currentPhase = 'import';   // 'import', 'upload', 'help', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;

@@ -130,6 +130,27 @@ function parseUploadText(text) {
   return { rows: parseQuestionJSON(parsed), error: null, format: 'json' };
 }
 
+// 答えを「／」で複数の答えに分ける（意味を複数答えさせる問題など）。
+// 「／」を含む答えを書きたい場合は「／／」と重ねると、区切りではなく
+// そのまま「／」1文字として扱う（CSVの "" と同じ、重ねてエスケープする方式）。
+// 区切りが1つも無ければ、答え全体を1件だけの配列で返す。
+function splitAnswers(answerText) {
+  const text = String(answerText || '');
+  const result = [];
+  let cell = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i], nextChar = text[i + 1];
+    if (char === '／') {
+      if (nextChar === '／') { cell += '／'; i++; }
+      else { result.push(cell.trim()); cell = ''; }
+    } else {
+      cell += char;
+    }
+  }
+  result.push(cell.trim());
+  return result.filter(function (s) { return s.length > 0; });
+}
+
 function shuffleArray(array) {
   for (let i = array.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

@@ -74,7 +74,9 @@ const testProgressBarConfirmed = document.getElementById('test-progress-bar-conf
 const testProgressText = document.getElementById('test-progress-text');
 
 const reviewQuestion = document.getElementById('review-question');
+const reviewModelAnswerSingle = document.getElementById('review-model-answer-single');
 const reviewModelAnswer = document.getElementById('review-model-answer');
+const reviewModelAnswerList = document.getElementById('review-model-answer-list');
 const reviewCommentary = document.getElementById('review-commentary');
 const reviewCommentaryBox = document.getElementById('review-commentary-box');
 
@@ -90,6 +92,7 @@ const reviewProgressText = document.getElementById('review-progress-text');
 
 const btnSelfCorrect = document.getElementById('btn-self-correct');
 const btnSelfWrong = document.getElementById('btn-self-wrong');
+const btnReviewNext = document.getElementById('btn-review-next');
 const btnClearReviewCanvas = document.getElementById('btn-clear-review-canvas');
 
 const sizePickerButtons = document.querySelectorAll('.size-picker-btn');

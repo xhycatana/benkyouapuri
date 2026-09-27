@@ -347,13 +347,31 @@ function initReviewPhase() {
 function showReviewItem() {
   updateTaskProgress('review');
   const activeQuestion = currentList[currentIndex];
-  if (!activeQuestion) return; 
+  if (!activeQuestion) return;
 
   const uAnswerImg = userAnswers[activeQuestion.id] || '';
 
   reviewQuestion.innerText = activeQuestion.question;
-  reviewModelAnswer.innerText = activeQuestion.answer;
-  
+
+  // 答えが「／」で複数に分かれている問題（例：英単語の意味を複数答える）は、
+  // 1つずつ判定できるように、通常の一括表示とは別の見た目に切り替える。
+  currentAnswerItems = splitAnswers(activeQuestion.answer);
+  currentAnswerItemResults = currentAnswerItems.map(() => undefined);
+  const isMultiAnswer = currentAnswerItems.length > 1;
+
+  reviewModelAnswerSingle.classList.toggle('hidden', isMultiAnswer);
+  reviewModelAnswerList.classList.toggle('hidden', !isMultiAnswer);
+  btnSelfWrong.classList.toggle('hidden', isMultiAnswer);
+  btnSelfCorrect.classList.toggle('hidden', isMultiAnswer);
+  btnReviewNext.classList.toggle('hidden', !isMultiAnswer);
+
+  if (isMultiAnswer) {
+    renderAnswerItemRows(currentAnswerItems);
+    updateReviewNextButtonReadiness();
+  } else {
+    reviewModelAnswer.innerText = activeQuestion.answer;
+  }
+
   globalCanvas.loadState(uAnswerImg);
 
   if (activeQuestion.commentary) {
@@ -364,42 +382,123 @@ function showReviewItem() {
   }
 
   const hasDrawn = userHasDrawn[activeQuestion.id] === true;
-  if (hasDrawn) {
-    btnSelfCorrect.classList.remove('opacity-30', 'pointer-events-none');
-    btnSelfCorrect.disabled = false;
-  } else {
-    btnSelfCorrect.classList.add('opacity-30', 'pointer-events-none');
-    btnSelfCorrect.disabled = true;
-  }
+  setReviewCorrectButtonsEnabled(hasDrawn);
 }
 
+// 「合ってた」系のボタン（一括・1項目ずつ、どちらも）を、まだ何も
+// 描いていない間は押せないようにする。白紙のまま丸を付けられてしまうのを防ぐ。
+function setReviewCorrectButtonsEnabled(enabled) {
+  btnSelfCorrect.classList.toggle('opacity-30', !enabled);
+  btnSelfCorrect.classList.toggle('pointer-events-none', !enabled);
+  btnSelfCorrect.disabled = !enabled;
+  reviewModelAnswerList.querySelectorAll('.answer-item-correct-btn').forEach((btn) => {
+    btn.classList.toggle('opacity-30', !enabled);
+    btn.classList.toggle('pointer-events-none', !enabled);
+  });
+}
 
-btnSelfCorrect.addEventListener('click', () => {
-  if (isTransitioning) return; 
-  const activeQuestion = currentList[currentIndex];
-  if (activeQuestion) updateSrsMetrics(activeQuestion, true);
-  goToNextReviewItem();
-});
+// 「／」で分かれた答えを1行ずつ、小さな○×付きで表示する
+function renderAnswerItemRows(items) {
+  reviewModelAnswerList.querySelectorAll('.answer-item-row').forEach((el) => el.remove());
 
-btnSelfWrong.addEventListener('click', () => {
-  if (isTransitioning) return; 
+  items.forEach((text, index) => {
+    const row = document.createElement('div');
+    row.className = 'answer-item-row flex items-center justify-between gap-2 border-b border-slate-100 py-1 text-sm';
+
+    const label = document.createElement('span');
+    label.className = 'flex-1';
+    label.innerText = text;
+
+    const wrongBtn = document.createElement('button');
+    wrongBtn.type = 'button';
+    wrongBtn.className = 'w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none';
+    wrongBtn.title = '間違えた';
+    wrongBtn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>';
+
+    const correctBtn = document.createElement('button');
+    correctBtn.type = 'button';
+    correctBtn.className = 'answer-item-correct-btn w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none ml-1';
+    correctBtn.title = '合ってた';
+    correctBtn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="8" /></svg>';
+
+    function refreshRowStyle() {
+      const r = currentAnswerItemResults[index];
+      wrongBtn.classList.toggle('bg-red-100', r === false);
+      wrongBtn.classList.toggle('border-red-500', r === false);
+      correctBtn.classList.toggle('bg-green-100', r === true);
+      correctBtn.classList.toggle('border-green-500', r === true);
+    }
+
+    wrongBtn.addEventListener('click', () => {
+      if (isTransitioning) return;
+      currentAnswerItemResults[index] = false;
+      refreshRowStyle();
+      updateReviewNextButtonReadiness();
+    });
+    correctBtn.addEventListener('click', () => {
+      if (isTransitioning || correctBtn.classList.contains('pointer-events-none')) return;
+      currentAnswerItemResults[index] = true;
+      refreshRowStyle();
+      updateReviewNextButtonReadiness();
+    });
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'flex items-center';
+    btnGroup.appendChild(wrongBtn);
+    btnGroup.appendChild(correctBtn);
+
+    row.appendChild(label);
+    row.appendChild(btnGroup);
+    reviewModelAnswerList.appendChild(row);
+  });
+}
+
+// 全項目が判定済みになったら「次へ」を押せるようにする
+function updateReviewNextButtonReadiness() {
+  const allMarked = currentAnswerItemResults.length > 0 &&
+    currentAnswerItemResults.every((r) => r === true || r === false);
+  btnReviewNext.disabled = !allMarked;
+  btnReviewNext.classList.toggle('opacity-30', !allMarked);
+  btnReviewNext.classList.toggle('pointer-events-none', !allMarked);
+}
+
+// 採点を確定して次の問題へ進む。一括判定（従来のボタン）・1項目ずつの
+// 判定（複数答えの問題）の、どちらからも同じ処理に合流させる。
+function finalizeReviewItem(isCorrect) {
   const activeQuestion = currentList[currentIndex];
-  if (activeQuestion) {
-    updateSrsMetrics(activeQuestion, false);
+  if (!activeQuestion) return;
+  updateSrsMetrics(activeQuestion, isCorrect);
+  if (!isCorrect) {
     userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
     wrongQuestions.push(activeQuestion);
   }
   goToNextReviewItem();
+}
+
+btnSelfCorrect.addEventListener('click', () => {
+  if (isTransitioning) return;
+  finalizeReviewItem(true);
+});
+
+btnSelfWrong.addEventListener('click', () => {
+  if (isTransitioning) return;
+  finalizeReviewItem(false);
+});
+
+btnReviewNext.addEventListener('click', () => {
+  if (isTransitioning || btnReviewNext.disabled) return;
+  const allCorrect = currentAnswerItemResults.length > 0 &&
+    currentAnswerItemResults.every((r) => r === true);
+  finalizeReviewItem(allCorrect);
 });
 
 btnClearReviewCanvas.addEventListener('click', () => {
-  if (isTransitioning) return; 
+  if (isTransitioning) return;
   globalCanvas.clear();
   const activeQuestion = currentList[currentIndex];
   if (activeQuestion) {
     userHasDrawn[activeQuestion.id] = false;
-    btnSelfCorrect.classList.add('opacity-30', 'pointer-events-none');
-    btnSelfCorrect.disabled = true;
+    setReviewCorrectButtonsEnabled(false);
   }
 });
 

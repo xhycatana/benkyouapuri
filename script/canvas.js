@@ -142,8 +142,7 @@ class GlobalHandwritingCanvas {
       delete userHasDrawn[drawnState.id];
       const activeQuestion = currentList[currentIndex];
       if (currentPhase === 'review' && activeQuestion && activeQuestion.id === drawnState.id) {
-        btnSelfCorrect.classList.add('opacity-30', 'pointer-events-none');
-        btnSelfCorrect.disabled = true;
+        setReviewCorrectButtonsEnabled(false);
       }
     }
   }
@@ -223,8 +222,7 @@ class GlobalHandwritingCanvas {
     if (currentList[currentIndex]) {
       userHasDrawn[currentList[currentIndex].id] = true;
       if (currentPhase === 'review') {
-        btnSelfCorrect.classList.remove('opacity-30', 'pointer-events-none');
-        btnSelfCorrect.disabled = false;
+        setReviewCorrectButtonsEnabled(true);
       }
     }
   }
