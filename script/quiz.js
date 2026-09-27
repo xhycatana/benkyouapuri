@@ -11,8 +11,9 @@ function isDrawingPhase() {
 function switchPhase(newPhase) {
   currentPhase = newPhase;
 
-  // ホーム画面では歯車ボタンを設定カードの中に置くので、右上の独立ボタンは隠す。
-  appHeader.classList.toggle('hidden', newPhase === 'import');
+  // 右上の歯車は、出題中・丸つけ中だけ出す（解きながら文字の大きさなどを変えられるように）。
+  // ホーム画面ではフッターの「詳細設定」から開くので要らず、追加画面・使い方画面では使わない。
+  appHeader.classList.toggle('hidden', newPhase !== 'test' && newPhase !== 'review');
 
   // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
@@ -21,6 +22,10 @@ function switchPhase(newPhase) {
   phaseContainer.classList.toggle('overflow-y-auto', scrollable);
   phaseContainer.classList.toggle('pointer-events-auto', scrollable);
   phaseContainer.classList.toggle('justify-center', !scrollable);
+  // スクロールする画面では、スクロールする箱を画面の横幅いっぱいにする。
+  // 幅を絞ったままだと、左右の余白に指を置いてもスクロールできない。
+  // 中身の幅は各画面の section 側（max-w-3xl など）で絞っている。
+  phaseContainer.classList.toggle('max-w-4xl', !scrollable);
 
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
@@ -43,6 +48,7 @@ function switchPhase(newPhase) {
     phaseHelp.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
+    sizePenTestPad();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
@@ -153,10 +159,12 @@ function startLearning(problemData) {
     // 保存済みの解答履歴があれば、それを優先して使う。
     // これが無いと記憶予測が常に初期値のままになり、優先出題が意味を持たない。
     const st = progressStats[id] || {};
+    // 逆にしたとき、答えの「／」区切りは問題文としてそのまま見せる（「／／」だけ「／」に戻す）。
+    // 元の問題文が新しい答えになるので、そこに「／」があっても区切りとして扱わないよう重ねておく。
     return {
       id: id,
-      question: shouldSwap ? item.answer : item.question,
-      answer: shouldSwap ? item.question : item.answer,
+      question: shouldSwap ? splitAnswers(item.answer).join('／') : item.question,
+      answer: shouldSwap ? String(item.question).replace(/／/g, '／／') : item.answer,
       commentary: item.commentary || '',
       correct_count: Number.isFinite(st.correct) ? st.correct : (item.correct_count || 0),
       incorrect_count: Number.isFinite(st.incorrect) ? st.incorrect : (item.incorrect_count || 0),
@@ -254,15 +262,10 @@ btnOpenSettings.addEventListener('click', () => settingsModal.classList.remove('
 btnOpenSettingsHome.addEventListener('click', () => settingsModal.classList.remove('hidden'));
 btnCloseSettings.addEventListener('click', () => settingsModal.classList.add('hidden'));
 
-// --- 戻る・スキップ ---
+// --- 戻る ---
 btnBackToImport.addEventListener('click', () => {
   if (isTransitioning) return;
   transitionPhase(() => switchPhase('import'));
-});
-
-btnSkipGroup.addEventListener('click', () => {
-  if (isTransitioning) return;
-  transitionPhase(() => goToNextGroupOrFinish());
 });
 
 // --- 問題文の文字の大きさ ---
@@ -331,7 +334,7 @@ btnSubmitTest.addEventListener('click', () => {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
 
-  userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
+  userAnswers[activeQuestion.id] = globalCanvas.getState();
   currentIndex++;
   updateTaskProgress('test');
 
@@ -354,7 +357,7 @@ function showReviewItem() {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
 
-  const uAnswerImg = userAnswers[activeQuestion.id] || '';
+  const uAnswerImg = userAnswers[activeQuestion.id] || null;
 
   reviewQuestion.innerText = activeQuestion.question;
 
@@ -374,7 +377,8 @@ function showReviewItem() {
     renderAnswerItemRows(currentAnswerItems);
     updateReviewNextButtonReadiness();
   } else {
-    reviewModelAnswer.innerText = activeQuestion.answer;
+    // 「／／」（本物の「／」1文字）を戻した後の答えを見せる
+    reviewModelAnswer.innerText = currentAnswerItems[0] || activeQuestion.answer;
   }
 
   globalCanvas.loadState(uAnswerImg);
@@ -474,7 +478,7 @@ function finalizeReviewItem(isCorrect) {
   if (!activeQuestion) return;
   updateSrsMetrics(activeQuestion, isCorrect);
   if (!isCorrect) {
-    userAnswers[activeQuestion.id] = globalCanvas.getDataURL();
+    userAnswers[activeQuestion.id] = globalCanvas.getState();
     wrongQuestions.push(activeQuestion);
   }
   goToNextReviewItem();

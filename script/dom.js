@@ -50,6 +50,9 @@ const btnUseSample = document.getElementById('btn-use-sample');
 
 const btnShowHelp = document.getElementById('btn-show-help');
 const btnHelpBack = document.getElementById('btn-help-back');
+const penTestPad = document.getElementById('pen-test-pad');
+const penTestStats = document.getElementById('pen-test-stats');
+const btnPenTestClear = document.getElementById('btn-pen-test-clear');
 
 const settingsModal = document.getElementById('settings-modal');
 const btnOpenSettings = document.getElementById('btn-open-settings');
@@ -63,7 +66,6 @@ const btnClearTestCanvas = document.getElementById('btn-clear-test-canvas');
 const btnSubmitTest = document.getElementById('btn-submit-test');
 
 const btnBackToImport = document.getElementById('btn-back-to-import');
-const btnSkipGroup = document.getElementById('btn-skip-group');
 
 const testGroupBarContainer = document.getElementById('test-group-bar-container');
 const testGroupTextContainer = document.getElementById('test-group-text-container');

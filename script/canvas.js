@@ -1,6 +1,78 @@
 // 全画面の手書きキャンバスと、ペンの設定。
 // ----------------------------------------------------------------------
 
+// --- 画面の向き ---
+// 画面を回転しても、書いた線は紙のようにガラス上の同じ場所に残し、問題文などの画面だけを回す。
+// そのために、書いたときの向きと今の向きの差だけ、線を逆向きに回して描き直す。
+//
+// window.orientation（iPad の Safari にある）の 0 / 90 / -90 / 180 を 0 / 90 / 270 / 180 にそろえる。
+// 90 は端末を反時計回りに倒した状態（ホームボタンが右）。取れない環境では null を返し、
+// その場合は向きの補正をせず、左上を基準に置き直すだけにする。
+function screenOrientation() {
+  const o = window.orientation;
+  return (typeof o === 'number') ? ((o % 360) + 360) % 360 : null;
+}
+
+// ガラス上の位置（縦向きのときの座標）→ 向き o のときの画面座標、への変換。
+// w, h は向き o のときの画面の幅・高さ（CSSピクセル）。
+function glassToViewport(o, w, h) {
+  const sideways = (o === 90 || o === 270);
+  const gw = sideways ? h : w;   // 縦向きのときの幅
+  const gh = sideways ? w : h;   // 縦向きのときの高さ
+  if (o === 90) return new DOMMatrix([0, -1, 1, 0, 0, gw]);
+  if (o === 180) return new DOMMatrix([-1, 0, 0, -1, gw, gh]);
+  if (o === 270) return new DOMMatrix([0, 1, -1, 0, gh, 0]);
+  return new DOMMatrix();
+}
+
+
+// --- 線の描き方（本番のキャンバスと、使い方画面の試し書きで共通） ---
+
+// 1回の pointermove に含まれるサンプル点を取り出す。
+// ペンは getCoalescedEvents() で間引かれる前の高頻度サンプル（240Hz）をすべて拾う。
+// ただしこのAPIは HTTPS でないと使えないので、ローカルのHTTPでは60Hz相当に落ちる。
+function pointerSamples(e, toPos) {
+  if (e.pointerType !== 'pen') return [toPos(e)];
+  // 空配列が返ることがある（空配列は truthy なので || では拾えない）
+  let coalesced = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+  if (coalesced.length === 0) coalesced = [e];
+  return coalesced.map(toPos);
+}
+
+// サンプル点をそのまま直線で結ぶと折れ線になって角が見えるため、
+// 「直前の点を制御点、隣り合う2点の中点を通過点」とする2次ベジェ曲線でつなぐ。
+// s は { lastX, lastY, lastT, midX, midY } を持つストロークの状態。
+// 描いたら true、重複として捨てたら false を返す。
+function extendSmoothStroke(ctx, s, pos) {
+  // Safari は同じ pointermove を2回発火させ、getCoalescedEvents() が
+  // まったく同じ点の並びを返してくることがある（実機で確認）。
+  // そのまま繋ぐと、2回目の先頭で数点ぶん巻き戻る直線が引かれ、
+  // 滑らかな線とは別に「数点飛ばしのカクカクした線」が重なって見える。
+  // 時刻が進んでいない点は再配信とみなして捨てる。
+  if (typeof pos.t === 'number' && typeof s.lastT === 'number') {
+    if (pos.t < s.lastT) return false;
+    if (pos.t === s.lastT && pos.x === s.lastX && pos.y === s.lastY) return false;
+  } else if (pos.x === s.lastX && pos.y === s.lastY) {
+    return false;   // 時刻が取れない場合は、座標が完全に同じものだけ捨てる
+  }
+
+  const midX = (s.lastX + pos.x) / 2;
+  const midY = (s.lastY + pos.y) / 2;
+
+  ctx.beginPath();
+  ctx.moveTo(s.midX, s.midY);
+  ctx.quadraticCurveTo(s.lastX, s.lastY, midX, midY);
+  ctx.stroke();
+
+  s.midX = midX;
+  s.midY = midY;
+  s.lastX = pos.x;
+  s.lastY = pos.y;
+  if (typeof pos.t === 'number') s.lastT = pos.t;
+  return true;
+}
+
+
 // --- 4. 全画面手書きキャンバス操作クラス ---
 class GlobalHandwritingCanvas {
   constructor(canvasElement) {
@@ -27,6 +99,11 @@ class GlobalHandwritingCanvas {
       if (isDrawingPhase() && !isTransitioning) e.preventDefault();
     }, { passive: false });
 
+    // 今のキャンバスが、どの向き・大きさのときに書かれたものか
+    this.orientation = screenOrientation();
+    this.cssWidth = 0;
+    this.cssHeight = 0;
+
     this.resizeTimeout = null;
     window.addEventListener('resize', () => {
       clearTimeout(this.resizeTimeout);
@@ -41,8 +118,9 @@ class GlobalHandwritingCanvas {
 
     const tempCanvas = document.createElement('canvas');
     let hasContent = false;
-    
-    if (this.canvas.width > 0 && this.canvas.height > 0) {
+    const from = { orientation: this.orientation, w: this.cssWidth, h: this.cssHeight };
+
+    if (this.canvas.width > 0 && this.canvas.height > 0 && from.w > 0 && from.h > 0) {
       tempCanvas.width = this.canvas.width;
       tempCanvas.height = this.canvas.height;
       const tempCtx = tempCanvas.getContext('2d');
@@ -56,26 +134,37 @@ class GlobalHandwritingCanvas {
     this.canvas.height = height * dpr;
     this.canvas.style.width = width + 'px';
     this.canvas.style.height = height + 'px';
-    
+    this.cssWidth = width;
+    this.cssHeight = height;
+
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
-    
+
     this.applyPenConfig();
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
-    
-    // 元のサイズのまま、左上を基準に置き直す。新旧のキャンバスの大きさに
-    // 引き伸ばして合わせると、画面を回転しただけで書いた線の形が変わって
-    // しまう（正方形が長方形になる等）。拡大縮小せずに描き直すことで、
-    // 回転しても書いた内容の見た目は変わらないようにする。
-    if (hasContent && tempCanvas.width > 0 && tempCanvas.height > 0) {
-      this.ctx.save();
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      try {
-        this.ctx.drawImage(tempCanvas, 0, 0);
-      } catch (err) {}
-      this.ctx.restore();
+
+    if (hasContent) {
+      try { this.drawKeepingPlace(tempCanvas, from); } catch (err) {}
     }
+    this.orientation = screenOrientation();
+  }
+
+  // from = { orientation, w, h }（書いたときの向きと画面の大きさ）の内容を、今の画面に描き直す。
+  // 大きさは変えない（引き伸ばすと、正方形が長方形になるなど線の形が変わる）。
+  // 向きが変わっていれば、ガラス上の同じ場所に来るよう、差の分だけ逆に回して置く。
+  drawKeepingPlace(source, from) {
+    const dpr = window.devicePixelRatio || 1;
+    const to = { orientation: screenOrientation(), w: this.cssWidth, h: this.cssHeight };
+    this.ctx.save();
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (from.orientation !== null && to.orientation !== null && from.orientation !== to.orientation) {
+      const m = glassToViewport(to.orientation, to.w, to.h)
+        .multiply(glassToViewport(from.orientation, from.w, from.h).inverse());
+      this.ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+    }
+    this.ctx.drawImage(source, 0, 0, from.w, from.h);
+    this.ctx.restore();
   }
 
   getPointerPos(e) {
@@ -205,19 +294,7 @@ class GlobalHandwritingCanvas {
 
     e.preventDefault();
 
-    // ペンは getCoalescedEvents() で間引かれる前の高頻度サンプル（240Hz）をすべて拾う。
-    // ただしこのAPIは HTTPS でないと使えないので、ローカルのHTTPでは60Hz相当に落ちる。
-    let positions;
-    if (e.pointerType === 'pen') {
-      // 空配列が返ることがある（空配列は truthy なので || では拾えない）
-      let coalesced = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
-      if (coalesced.length === 0) coalesced = [e];
-      positions = coalesced.map(ev => this.getPointerPos(ev));
-    } else {
-      positions = [this.getPointerPos(e)];
-    }
-
-    for (const pos of positions) this.extendStroke(pos);
+    for (const pos of pointerSamples(e, ev => this.getPointerPos(ev))) this.extendStroke(pos);
 
     if (currentList[currentIndex]) {
       userHasDrawn[currentList[currentIndex].id] = true;
@@ -227,36 +304,8 @@ class GlobalHandwritingCanvas {
     }
   }
 
-  // サンプル点をそのまま直線で結ぶと折れ線になって角が見えるため、
-  // 「直前の点を制御点、隣り合う2点の中点を通過点」とする2次ベジェ曲線でつなぐ。
   extendStroke(pos) {
-    const s = this.stroke;
-
-    // Safari は同じ pointermove を2回発火させ、getCoalescedEvents() が
-    // まったく同じ点の並びを返してくることがある（実機で確認）。
-    // そのまま繋ぐと、2回目の先頭で数点ぶん巻き戻る直線が引かれ、
-    // 滑らかな線とは別に「数点飛ばしのカクカクした線」が重なって見える。
-    // 時刻が進んでいない点は再配信とみなして捨てる。
-    if (typeof pos.t === 'number' && typeof s.lastT === 'number') {
-      if (pos.t < s.lastT) return;
-      if (pos.t === s.lastT && pos.x === s.lastX && pos.y === s.lastY) return;
-    } else if (pos.x === s.lastX && pos.y === s.lastY) {
-      return;   // 時刻が取れない場合は、座標が完全に同じものだけ捨てる
-    }
-
-    const midX = (s.lastX + pos.x) / 2;
-    const midY = (s.lastY + pos.y) / 2;
-
-    this.ctx.beginPath();
-    this.ctx.moveTo(s.midX, s.midY);
-    this.ctx.quadraticCurveTo(s.lastX, s.lastY, midX, midY);
-    this.ctx.stroke();
-
-    s.midX = midX;
-    s.midY = midY;
-    s.lastX = pos.x;
-    s.lastY = pos.y;
-    if (typeof pos.t === 'number') s.lastT = pos.t;
+    extendSmoothStroke(this.ctx, this.stroke, pos);
   }
 
   // ホーム画面に戻ったら解除する（ペンが使えなくなったときに指へ切り替える逃げ道）
@@ -304,24 +353,26 @@ class GlobalHandwritingCanvas {
     this.ctx.lineJoin = 'round';
   }
 
-  getDataURL() {
-    return this.canvas.toDataURL();
+  // 書いた内容を、そのときの向き・大きさと一緒に取っておく。
+  // 丸つけ画面で読み込み直すときに、出題中と向きが違っていてもガラス上の同じ場所に戻せるように。
+  getState() {
+    return {
+      url: this.canvas.toDataURL(),
+      orientation: screenOrientation(),
+      w: this.cssWidth || window.innerWidth,
+      h: this.cssHeight || window.innerHeight
+    };
   }
 
-  loadState(dataURL) {
+  loadState(state) {
     this.clear();
-    if (!dataURL) return;
+    if (!state || !state.url) return;
     const img = new Image();
     img.onload = () => {
-      const dpr = window.devicePixelRatio || 1;
-      if (this.canvas.width > 0 && this.canvas.height > 0) {
-        try {
-          this.ctx.drawImage(img, 0, 0, this.canvas.width / dpr, this.canvas.height / dpr);
-        } catch (err) {}
-      }
+      try { this.drawKeepingPlace(img, state); } catch (err) {}
       this.applyPenConfig();
     };
-    img.src = dataURL;
+    img.src = state.url;
   }
 }
 
@@ -358,5 +409,95 @@ colorPickerButtons.forEach(btn => {
     });
   });
 });
+
+
+// --- 使い方画面の試し書き ---
+// 本番と同じ描き方（extendSmoothStroke）とペンの太さで描き、
+// 入力を1秒あたり何点受け取れているかを表示する。Apple Pencil の 240Hz が
+// 実機で本当に出ているかを、その場で確かめるためのもの。
+const penTest = {
+  ctx: penTestPad.getContext('2d'),
+  stroke: null,
+  sawPen: false,
+  points: 0,       // 描いたサンプル点の数（重複は除く。書いている間だけ数える）
+  events: 0,       // pointermove の回数
+  activeMs: 0,     // ペンが画面に触れていた合計時間
+  strokeStartT: 0
+};
+
+// 表示された大きさに合わせてキャンバスの解像度を決める（隠れている間は大きさが0なので、開くたびに呼ぶ）
+function sizePenTestPad() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = penTestPad.getBoundingClientRect();
+  if (rect.width === 0) return;
+  penTestPad.width = Math.round(rect.width * dpr);
+  penTestPad.height = Math.round(rect.height * dpr);
+  penTest.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  penTest.ctx.lineCap = 'round';
+  penTest.ctx.lineJoin = 'round';
+}
+
+function penTestPos(e) {
+  const rect = penTestPad.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top, t: e.timeStamp };
+}
+
+function updatePenTestStats() {
+  if (penTest.activeMs <= 0 || penTest.events === 0) return;
+  const perSecond = Math.round(penTest.points / (penTest.activeMs / 1000));
+  const perEvent = (penTest.points / penTest.events).toFixed(1);
+  const coalesced = ('getCoalescedEvents' in PointerEvent.prototype) ? '対応' : '非対応';
+  penTestStats.textContent = '約 ' + perSecond + ' 点/秒（1回の通知に平均 ' + perEvent + ' 点）' +
+    ' ・ HTTPS: ' + (window.isSecureContext ? 'はい' : 'いいえ') +
+    ' ・ 高頻度入力: ' + coalesced;
+}
+
+penTestPad.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'pen') penTest.sawPen = true;
+  if (e.pointerType === 'touch' && penTest.sawPen) return;   // 本番と同じく、ペンを使ったら指は無視
+  e.preventDefault();
+  if (penTestPad.width === 0) sizePenTestPad();
+  const pos = penTestPos(e);
+  penTest.stroke = { pointerId: e.pointerId, lastX: pos.x, lastY: pos.y, lastT: pos.t, midX: pos.x, midY: pos.y };
+  penTest.strokeStartT = pos.t;
+  penTest.ctx.strokeStyle = currentPenColor;
+  penTest.ctx.lineWidth = currentPenWidth;
+  try { penTestPad.setPointerCapture(e.pointerId); } catch (err) {}
+});
+
+penTestPad.addEventListener('pointermove', (e) => {
+  const s = penTest.stroke;
+  if (!s || s.pointerId !== e.pointerId) return;
+  e.preventDefault();
+  penTest.events++;
+  // 重複として捨てた点は数えない（同じ点を2回受け取っても、見かけの頻度が上がらないように）
+  for (const pos of pointerSamples(e, penTestPos)) {
+    if (extendSmoothStroke(penTest.ctx, s, pos)) penTest.points++;
+  }
+});
+
+function endPenTestStroke(e) {
+  const s = penTest.stroke;
+  if (!s || s.pointerId !== e.pointerId) return;
+  penTest.ctx.beginPath();
+  penTest.ctx.moveTo(s.midX, s.midY);
+  penTest.ctx.lineTo(s.lastX, s.lastY);
+  penTest.ctx.stroke();
+  penTest.activeMs += Math.max(0, e.timeStamp - penTest.strokeStartT);
+  penTest.stroke = null;
+  updatePenTestStats();
+}
+penTestPad.addEventListener('pointerup', endPenTestStroke);
+penTestPad.addEventListener('pointercancel', endPenTestStroke);
+
+btnPenTestClear.addEventListener('click', () => {
+  penTest.ctx.clearRect(0, 0, penTestPad.width, penTestPad.height);
+  penTest.points = 0;
+  penTest.events = 0;
+  penTest.activeMs = 0;
+  penTestStats.textContent = 'ペンで書くと、入力を1秒あたり何点受け取れているかが出ます。';
+});
+
+window.addEventListener('resize', () => { if (currentPhase === 'help') sizePenTestPad(); });
 
 // スライダー設定

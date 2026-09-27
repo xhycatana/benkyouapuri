@@ -65,9 +65,9 @@ function renderTags() {
   tags.forEach(function (t) {
     const on = activeTags.indexOf(t) !== -1;
     const b = document.createElement('button');
-    b.className = 'px-2.5 py-1 text-xs border rounded-full focus:outline-none ' +
-      (on ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-          : 'bg-white text-slate-500 border-slate-300 hover:border-[var(--accent)] hover:text-[var(--accent)]');
+    b.className = 'px-2.5 py-1 text-xs border focus:outline-none ' +
+      (on ? 'bg-black text-white border-black'
+          : 'bg-white text-slate-500 border-slate-300 hover:border-black');
     b.textContent = t;
     b.addEventListener('click', function () {
       const at = activeTags.indexOf(t);
@@ -105,7 +105,7 @@ function renderNode(node, container, depth) {
     const isClosed = closedFolders[f.key] === true;
 
     const row = document.createElement('button');
-    row.className = 'w-full flex items-center text-left py-1.5 rounded-lg hover:bg-[var(--accent-soft)] focus:outline-none';
+    row.className = 'w-full flex items-center text-left py-1.5 hover:bg-slate-50 focus:outline-none';
     row.style.paddingLeft = (depth * 12) + 'px';
 
     const mark = document.createElement('span');
@@ -129,13 +129,13 @@ function renderNode(node, container, depth) {
 
   node.items.forEach(function (s) {
     const row = document.createElement('label');
-    row.className = 'flex items-center py-1.5 rounded-lg cursor-pointer hover:bg-[var(--accent-soft)]';
+    row.className = 'flex items-center py-1.5 cursor-pointer hover:bg-slate-50';
     row.style.paddingLeft = (depth * 12 + 16) + 'px';
 
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = selectedPaths.indexOf(s.path) !== -1;
-    box.className = 'mr-2 w-5 h-5 accent-[var(--accent)]';
+    box.className = 'mr-2 w-5 h-5 accent-black';
     box.addEventListener('change', function () {
       const at = selectedPaths.indexOf(s.path);
       if (box.checked) { if (at === -1) selectedPaths.push(s.path); }
@@ -148,7 +148,7 @@ function renderNode(node, container, depth) {
     label.textContent = s.title || s.path.split('/').pop();
 
     const count = document.createElement('span');
-    count.className = 'ml-2 text-[11px] text-[var(--accent)] bg-[var(--accent-soft-strong)] px-2 py-0.5 rounded-full';
+    count.className = 'ml-2 text-xs text-slate-400';
     count.textContent = (s.count || 0) + '問';
 
     const del = document.createElement('button');

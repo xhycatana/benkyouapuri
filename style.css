@@ -1,12 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
-:root {
-  --accent: #0F6E56;
-  --accent-dark: #0B5744;
-  --accent-soft: rgba(15, 110, 86, 0.07);
-  --accent-soft-strong: rgba(15, 110, 86, 0.12);
-}
-
 body {
   font-family: 'Inter', 'Noto Sans JP', sans-serif;
   background-color: #ffffff; /* 完全な白色 */

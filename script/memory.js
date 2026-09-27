@@ -47,7 +47,11 @@ function calculateProbability(q) {
 }
 
 function sortQuestionsBySrs(list) {
-  const scored = list.map(q => ({
+  // 同じ確率どうし（特に、まだ解いていない問題はすべて確率0）は無作為な順にする。
+  // 並べ替えは同点なら元の順を保つので、先に混ぜておかないと、上限で切ったときに
+  // 新しい問題集では毎回、先頭から同じ問題ばかりが選ばれてしまう。
+  // 確率の違う問題どうしの順は、混ぜても並べ替えで元に戻るので影響しない。
+  const scored = shuffleArray(list.slice()).map(q => ({
     item: q,
     prob: calculateProbability(q)
   }));
