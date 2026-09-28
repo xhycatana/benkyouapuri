@@ -19,3 +19,15 @@ body {
 .fade-out {
   opacity: 0;
 }
+
+/* 背景の罫線（ノートのような横線）。等間隔に繰り返すだけなので、
+   画面の大きさが変わっても JS で計算し直す必要がない。 */
+#ruled-lines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 39px,
+    #e2e8f0 39px,
+    #e2e8f0 40px
+  );
+}

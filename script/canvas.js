@@ -64,6 +64,7 @@ class GlobalHandwritingCanvas {
     // 別のページへ移ったとき、古いページの画像が後から描かれてしまわないようにする
     this.loadTokens = [0, 0];
     this.halfLoading = [false, false];
+    this.slotCount = 2;   // 1ページ表示か見開き(2)か。quiz.js の setPageSpread から変わる
 
     this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
     this.canvas.addEventListener('pointermove', (e) => this.draw(e));
@@ -307,18 +308,27 @@ class GlobalHandwritingCanvas {
   }
 
   // --- 見開き ---
-  // キャンバスは画面1枚で、左半分と右半分がそれぞれ1ページ。0 が左、1 が右。
+  // キャンバスは画面1枚。見開き(slotCount=2)なら左半分と右半分がそれぞれ1ページ（0 が左、1 が右）、
+  // 1ページ表示(slotCount=1)ならキャンバス全体が1ページ（常に 0）。
+
+  setSlotCount(n) {
+    this.slotCount = n;
+  }
 
   get loading() {
     return this.halfLoading[0] || this.halfLoading[1];
   }
 
   sideAt(x) {
+    if (this.slotCount === 1) return 0;
     return x < this.canvas.clientWidth / 2 ? 0 : 1;
   }
 
-  // 半分の範囲（キャンバスの実ピクセル）
+  // 半分（1ページ表示なら全体）の範囲（キャンバスの実ピクセル）
   halfRect(side) {
+    if (this.slotCount === 1) {
+      return { x: 0, w: this.canvas.width, h: this.canvas.height };
+    }
     const left = Math.floor(this.canvas.width / 2);
     return side === 0
       ? { x: 0, w: left, h: this.canvas.height }

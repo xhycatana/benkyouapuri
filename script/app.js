@@ -41,4 +41,5 @@ window.onload = function() {
   watchZoom();
   loadLibrary();
   loadHistoryPending();
+  loadStudyTimePending();
 };

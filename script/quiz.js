@@ -10,6 +10,7 @@ function isDrawingPhase() {
 // --- フェーズ切り替え ---
 function switchPhase(newPhase) {
   currentPhase = newPhase;
+  updateStudyTimer();   // 出題・丸つけへの出入りで、勉強時間の計測を始める・止める
 
   // 右上の歯車は、出題中・丸つけ中だけ出す（解きながら文字の大きさなどを変えられるように）。
   // ホーム画面ではフッターの「詳細設定」から開くので要らず、追加画面・使い方画面では使わない。
@@ -18,7 +19,7 @@ function switchPhase(newPhase) {
   // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
   // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
-  const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help');
+  const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help' || newPhase === 'studytime');
   phaseContainer.classList.toggle('overflow-y-auto', scrollable);
   phaseContainer.classList.toggle('pointer-events-auto', scrollable);
   phaseContainer.classList.toggle('justify-center', !scrollable);
@@ -30,9 +31,11 @@ function switchPhase(newPhase) {
   ['pl-10', 'pr-2', 'md:pl-12', 'md:pr-4'].forEach((c) => phaseContainer.classList.toggle(c, !scrollable));
 
   pageDivider.classList.add('hidden');
+  ruledLines.classList.add('hidden');
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
   phaseHelp.classList.add('hidden');
+  phaseStudyTime.classList.add('hidden');
   phaseTest.classList.add('hidden');
   phaseReview.classList.add('hidden');
 
@@ -44,6 +47,7 @@ function switchPhase(newPhase) {
     globalCanvas.resetPalmRejection();
     saveProgress();
     saveHistory();
+    saveStudyTime();
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
@@ -53,6 +57,11 @@ function switchPhase(newPhase) {
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
     sizePenTestPad();
+  } else if (newPhase === 'studytime') {
+    phaseStudyTime.classList.remove('hidden');
+    leftControlsContainer.classList.add('hidden');
+    globalCanvas.clear();
+    renderStudyTimeView();
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
@@ -172,22 +181,20 @@ function updateTaskProgress(mode) {
 function startLearning(problemData) {
   const shouldSrsSort = checkSrsSort.checked;
   const shouldShuffle = checkRandom.checked;
-  const shouldSwap = checkSwap.checked;
   settingGroupSize = Math.max(0, parseInt(inputGroupSize.value) || 0);
   settingQuestionLimit = Math.max(0, parseInt(inputQuestionLimit.value) || 0);
 
-  // 表裏（問題と答え）の入れ替え
+  // 問題と答えを逆にする問題集は、この時点までに library.js が既に
+  // 入れ替え済みの問題（id の末尾が ":swap"）として混ぜ込んでいる
   originalList = problemData.map(item => {
     const id = item.id || generateUUID();
     // 保存済みの解答履歴があれば、それを優先して使う。
     // これが無いと記憶予測が常に初期値のままになり、優先出題が意味を持たない。
     const st = progressStats[id] || {};
-    // 逆にしたとき、答えの「／」区切りは問題文としてそのまま見せる（「／／」だけ「／」に戻す）。
-    // 元の問題文が新しい答えになるので、そこに「／」があっても区切りとして扱わないよう重ねておく。
     return {
       id: id,
-      question: shouldSwap ? splitAnswers(item.answer).join('／') : item.question,
-      answer: shouldSwap ? String(item.question).replace(/／/g, '／／') : item.answer,
+      question: item.question,
+      answer: item.answer,
       commentary: item.commentary || '',
       correct_count: Number.isFinite(st.correct) ? st.correct : (item.correct_count || 0),
       incorrect_count: Number.isFinite(st.incorrect) ? st.incorrect : (item.incorrect_count || 0),
@@ -291,15 +298,21 @@ btnBackToImport.addEventListener('click', () => {
   transitionPhase(() => switchPhase('import'));
 });
 
-// --- 問題文の文字の大きさ ---
-// 見た目だけの設定なので、記憶モデル(memorySettings)とは別に持つ。
+// --- 見た目だけの設定（問題文の文字の大きさ・背景の罫線・1ページ/見開き） ---
+// 記憶モデル(memorySettings)とは別に持つ。
 const STORAGE_KEY_DISPLAY = 'flashmemo_displaySettings';
-let displaySettings = { questionFontSize: 24 };
+let displaySettings = { questionFontSize: 24, showRuledLines: true, pageSpread: 2 };
 
 try {
   const savedDisplay = JSON.parse(localStorage.getItem(STORAGE_KEY_DISPLAY) || 'null');
   if (savedDisplay && typeof savedDisplay.questionFontSize === 'number' && isFinite(savedDisplay.questionFontSize)) {
     displaySettings.questionFontSize = savedDisplay.questionFontSize;
+  }
+  if (savedDisplay && typeof savedDisplay.showRuledLines === 'boolean') {
+    displaySettings.showRuledLines = savedDisplay.showRuledLines;
+  }
+  if (savedDisplay && (savedDisplay.pageSpread === 1 || savedDisplay.pageSpread === 2)) {
+    displaySettings.pageSpread = savedDisplay.pageSpread;
   }
 } catch (err) {}
 
@@ -316,6 +329,8 @@ function applyQuestionFontSize() {
 function applyDisplaySettingsToUI() {
   questionFontInput.value = displaySettings.questionFontSize;
   questionFontVal.textContent = displaySettings.questionFontSize + ' px';
+  checkRuledLines.checked = displaySettings.showRuledLines;
+  updateSpreadToggleIcon();
   applyQuestionFontSize();
 }
 
@@ -326,37 +341,50 @@ questionFontInput.addEventListener('input', function () {
   applyQuestionFontSize();
 });
 
+checkRuledLines.addEventListener('change', function () {
+  displaySettings.showRuledLines = checkRuledLines.checked;
+  saveDisplaySettings();
+  placePageDivider();
+});
 
-// --- 答案のページめくり（見開き） ---
-// 画面の左半分と右半分がそれぞれ1ページで、2ページずつ見える。めくると1ページずつ進むので、
+
+// --- 答案のページめくり（1ページ／見開き） ---
+// 画面いっぱいが1ページ（1ページ表示）か、左半分・右半分がそれぞれ1ページ（見開き）かを、
+// displaySettings.pageSpread（1 か 2）で切り替えられる。見開きでは、めくると1ページずつ進むので、
 // 右にあったページが左に移り、1つ前のページを見ながら次のページに書ける。
 // 答案エリアをスクロールさせたり大きな1枚にしたりすると、iPad の Safari のキャンバスの
 // 大きさ・メモリの上限にぶつかるので、キャンバスは画面1枚のまま、見えていないページは画像にして取っておく。
-// answerPageIndex は左のページの番号。右のページは answerPageIndex + 1。
+// answerPageIndex は一番左（1ページ表示ならそのページ）の番号。見開きでは、右のページは +1。
 
-// saved（提出済みの答案）が無ければ白紙2ページから始める
+function visiblePageCount() {
+  return displaySettings.pageSpread === 1 ? 1 : 2;
+}
+
+// saved（提出済みの答案）が無ければ白紙から始める
 function resetAnswerPages(saved) {
   answerPages = saved ? saved.images.slice() : [];
   answerPageInked = saved ? saved.inked.slice() : [];
-  while (answerPages.length < 2) {
+  const n = visiblePageCount();
+  while (answerPages.length < n) {
     answerPages.push(null);
     answerPageInked.push(false);
   }
   answerPageIndex = 0;
-  globalCanvas.loadHalf(0, answerPages[0]);
-  globalCanvas.loadHalf(1, answerPages[1]);
+  globalCanvas.setSlotCount(n);
+  for (let i = 0; i < n; i++) globalCanvas.loadHalf(i, answerPages[i]);
   updatePageControls();
   placePageDivider();
 }
 
-// 見えている2ページをキャンバスから取り込み、全ページをまとめて返す
+// 見えているページをキャンバスから取り込み、全ページをまとめて返す
 function collectAnswerPages() {
-  [0, 1].forEach((side) => {
+  const n = visiblePageCount();
+  for (let side = 0; side < n; side++) {
     // 画像の読み込みが終わっていない間は、キャンバスに中身がまだ無いので取り込まない
-    if (globalCanvas.halfLoading[side]) return;
+    if (globalCanvas.halfLoading[side]) continue;
     const page = answerPageIndex + side;
     answerPages[page] = answerPageInked[page] ? globalCanvas.getHalfDataURL(side) : null;
-  });
+  }
   return { images: answerPages.slice(), inked: answerPageInked.slice() };
 }
 
@@ -365,43 +393,48 @@ function flipAnswerPage(step) {
   const next = answerPageIndex + step;
   if (next < 0) return;
   collectAnswerPages();
+  const n = visiblePageCount();
   const last = answerPages.length - 1;
-  if (step < 0 && last === answerPageIndex + 1 && last > 1 && !answerPageInked[last]) {
+  const rightmost = answerPageIndex + n - 1;
+  if (step < 0 && last === rightmost && last >= n && !answerPageInked[last]) {
     // 何も書いていない最後のページから戻るときは、そのページを消す（白紙のページが後ろに溜まらないように）
     answerPages.pop();
     answerPageInked.pop();
   }
-  if (next + 1 >= answerPages.length) {
+  if (next + n - 1 >= answerPages.length) {
     answerPages.push(null);
     answerPageInked.push(false);
   }
   answerPageIndex = next;
 
   if (globalCanvas.loading) {
-    // 読み込み途中の側があるときは、見えている中身を使わずに両側とも読み直す
-    globalCanvas.loadHalf(0, answerPages[next]);
-    globalCanvas.loadHalf(1, answerPages[next + 1]);
+    // 読み込み途中のスロットがあるときは、見えている中身を使わずに全スロット読み直す
+    for (let i = 0; i < n; i++) globalCanvas.loadHalf(i, answerPages[next + i]);
   } else if (step > 0) {
-    globalCanvas.moveHalf(1, 0);
-    globalCanvas.loadHalf(1, answerPages[next + 1]);
+    // 1つ前のスロットへずらして詰め、空いた一番右だけ新しく読み込む（1ページ表示なら詰める分は無い）
+    for (let i = 0; i < n - 1; i++) globalCanvas.moveHalf(i + 1, i);
+    globalCanvas.loadHalf(n - 1, answerPages[next + n - 1]);
   } else {
-    globalCanvas.moveHalf(0, 1);
+    for (let i = n - 1; i > 0; i--) globalCanvas.moveHalf(i - 1, i);
     globalCanvas.loadHalf(0, answerPages[next]);
   }
   updatePageControls();
 }
 
 // 出題中・丸つけ中の両方にあるページ送りの表示を揃える。
-// 右のページが最後のページなら「次へ」は「ページを足す」になる。白紙のページの後ろには足せない。
+// 一番右のページが最後のページなら「次へ」は「ページを足す」になる。白紙のページの後ろには足せない。
 function updatePageControls() {
   const total = answerPages.length;
-  const right = answerPageIndex + 1;
-  const onLast = right === total - 1;
+  const n = visiblePageCount();
+  const rightmost = answerPageIndex + n - 1;
+  const onLast = rightmost === total - 1;
   const canPrev = answerPageIndex > 0;
-  const canNext = !onLast || answerPageInked[right];
+  const canNext = !onLast || answerPageInked[rightmost];
 
   document.querySelectorAll('.page-indicator').forEach((el) => {
-    el.textContent = (answerPageIndex + 1) + '-' + (right + 1) + ' / ' + total;
+    el.textContent = n === 1
+      ? (answerPageIndex + 1) + ' / ' + total
+      : (answerPageIndex + 1) + '-' + (rightmost + 1) + ' / ' + total;
   });
   document.querySelectorAll('.page-prev-btn').forEach((btn) => {
     btn.disabled = !canPrev;
@@ -416,6 +449,37 @@ function updatePageControls() {
   });
 }
 
+// --- 1ページ／見開きの切り替え ---
+function updateSpreadToggleIcon() {
+  const two = displaySettings.pageSpread !== 1;
+  document.querySelectorAll('.spread-icon-2').forEach((el) => el.classList.toggle('hidden', !two));
+  document.querySelectorAll('.spread-icon-1').forEach((el) => el.classList.toggle('hidden', two));
+}
+
+function setPageSpread(n) {
+  if (displaySettings.pageSpread === n) return;
+  // 今のキャンバスの中身を、今のスロット数のまま先に確定させてから人数を変える
+  if (isDrawingPhase()) collectAnswerPages();
+  displaySettings.pageSpread = n;
+  saveDisplaySettings();
+  updateSpreadToggleIcon();
+  if (!isDrawingPhase()) return;
+
+  while (answerPages.length < answerPageIndex + n) {
+    answerPages.push(null);
+    answerPageInked.push(false);
+  }
+  globalCanvas.setSlotCount(n);
+  for (let i = 0; i < n; i++) globalCanvas.loadHalf(i, answerPages[answerPageIndex + i]);
+  updatePageControls();
+  placePageDivider();
+}
+
+btnToggleSpread.addEventListener('click', function () {
+  if (isTransitioning) return;
+  setPageSpread(displaySettings.pageSpread === 1 ? 2 : 1);
+});
+
 // 見開きの真ん中の区切り線。画面のちょうど真ん中に短く引く。
 // 問題文が長いときや解説があるときは、問題文とボタンにかからない範囲まで削る。
 // 問題文の長さ・丸つけの解説の有無・文字の大きさで削る量が変わるので、そのたびに置き直す。
@@ -424,8 +488,17 @@ const PAGE_DIVIDER_RATIO = 0.07;   // 線の長さ（画面の高さに対する
 
 function placePageDivider() {
   const drawing = isDrawingPhase();
-  pageDivider.classList.toggle('hidden', !drawing);
+  const showDivider = drawing && displaySettings.pageSpread !== 1;   // 1ページ表示なら区切る線は不要
+  pageDivider.classList.toggle('hidden', !showDivider);
+  ruledLines.classList.toggle('hidden', !drawing || !displaySettings.showRuledLines);
   if (!drawing) return;
+
+  // 罫線は進捗バーの下から出す。上端まで敷くと、進捗バーの後ろに線が透けて見えてしまうため
+  const progressHeader = currentPhase === 'test' ? testProgressHeader : reviewProgressHeader;
+  ruledLines.style.top = progressHeader.getBoundingClientRect().bottom + 'px';
+
+  if (!showDivider) return;
+
   const above = currentPhase === 'test' ? testQuestionBox : reviewInfoBox;
   const below = currentPhase === 'test' ? btnSubmitTest : btnClearReviewCanvas;
   const minTop = above.getBoundingClientRect().bottom + PAGE_DIVIDER_GAP;
@@ -468,27 +541,25 @@ function noteAnswerDrawn(side) {
 function currentAnswerDrawnState() {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return null;
-  return {
-    id: activeQuestion.id,
-    page: answerPageIndex,
-    inked: [answerPageInked[answerPageIndex] === true, answerPageInked[answerPageIndex + 1] === true]
-  };
+  const n = visiblePageCount();
+  const inked = [];
+  for (let i = 0; i < n; i++) inked.push(answerPageInked[answerPageIndex + i] === true);
+  return { id: activeQuestion.id, page: answerPageIndex, inked: inked };
 }
 
 function restoreAnswerDrawnState(state) {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion || activeQuestion.id !== state.id || state.page !== answerPageIndex) return;
-  answerPageInked[state.page] = state.inked[0];
-  answerPageInked[state.page + 1] = state.inked[1];
+  state.inked.forEach(function (v, i) { answerPageInked[state.page + i] = v; });
   syncHasDrawn();
   updatePageControls();
 }
 
-// 消去ボタンは、見えている2ページを消す
+// 消去ボタンは、見えているページを消す
 function clearCurrentAnswerPage() {
   globalCanvas.clear();
-  answerPageInked[answerPageIndex] = false;
-  answerPageInked[answerPageIndex + 1] = false;
+  const n = visiblePageCount();
+  for (let i = 0; i < n; i++) answerPageInked[answerPageIndex + i] = false;
   syncHasDrawn();
   updatePageControls();
 }

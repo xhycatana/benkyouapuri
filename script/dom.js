@@ -8,7 +8,9 @@ const phaseTest = document.getElementById('phase-test');
 const phaseReview = document.getElementById('phase-review');
 const phaseUpload = document.getElementById('phase-upload');
 const phaseHelp = document.getElementById('phase-help');
+const phaseStudyTime = document.getElementById('phase-study-time');
 const phaseContainer = document.getElementById('phase-container');
+const ruledLines = document.getElementById('ruled-lines');
 
 const libraryTags = document.getElementById('library-tags');
 const libraryTree = document.getElementById('library-tree');
@@ -19,6 +21,7 @@ const btnStartSelected = document.getElementById('btn-start-selected');
 
 const uploadPath = document.getElementById('upload-path');
 const uploadTags = document.getElementById('upload-tags');
+const uploadAllowSwap = document.getElementById('upload-allow-swap');
 const uploadCsv = document.getElementById('upload-csv');
 const uploadPreview = document.getElementById('upload-preview');
 const uploadMessage = document.getElementById('upload-message');
@@ -40,11 +43,11 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const checkSrsSort = document.getElementById('check-srs-sort');
 const checkRandom = document.getElementById('check-random');
-const checkSwap = document.getElementById('check-swap');
 const inputGroupSize = document.getElementById('input-group-size');
 const inputQuestionLimit = document.getElementById('input-question-limit');
 const questionFontInput = document.getElementById('question-font-input');
 const questionFontVal = document.getElementById('question-font-val');
+const checkRuledLines = document.getElementById('check-ruled-lines');
 
 const btnUseSample = document.getElementById('btn-use-sample');
 
@@ -54,7 +57,16 @@ const penTestPad = document.getElementById('pen-test-pad');
 const penTestStats = document.getElementById('pen-test-stats');
 const btnPenTestClear = document.getElementById('btn-pen-test-clear');
 
+const btnShowStudyTime = document.getElementById('btn-show-study-time');
+const btnStudyTimeBack = document.getElementById('btn-study-time-back');
+const studyTimeCumulative = document.getElementById('study-time-cumulative');
+const studyTimeTotal = document.getElementById('study-time-total');
+const studyTimeChart = document.getElementById('study-time-chart');
+const studyTimeChartGrid = document.getElementById('study-time-chart-grid');
+const studyTimeList = document.getElementById('study-time-list');
+
 const settingsModal = document.getElementById('settings-modal');
+const btnToggleSpread = document.getElementById('btn-toggle-spread');
 const btnOpenSettings = document.getElementById('btn-open-settings');
 const btnOpenSettingsHome = document.getElementById('btn-open-settings-home');
 const btnCloseSettings = document.getElementById('btn-close-settings');
@@ -63,6 +75,8 @@ const appHeader = document.getElementById('app-header');
 const testQuestion = document.getElementById('test-question');
 const testQuestionBox = document.getElementById('test-question-box');
 const reviewInfoBox = document.getElementById('review-info-box');
+const testProgressHeader = document.getElementById('test-progress-header');
+const reviewProgressHeader = document.getElementById('review-progress-header');
 const pageDivider = document.getElementById('page-divider');
 const testProbIndicator = document.getElementById('test-prob-indicator');
 const btnClearTestCanvas = document.getElementById('btn-clear-test-canvas');

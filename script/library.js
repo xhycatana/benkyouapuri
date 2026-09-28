@@ -7,9 +7,17 @@
 
 
 let libraryIndex = { sets: [] };
-let selectedPaths = [];       // 選択中の問題集のパス
+// 選択状態。パスごとに、そのまま(normal)・逆にして(swap)のどちらを選んでいるかを持つ。
+// 「問題と答えを逆にする」は問題集ごとに許可・不許可が決まっており（upload.js の allowSwap）、
+// 許可されている問題集だけ、選択欄にチェックボックスが2つ並ぶ。
+let selection = {};
 let activeTags = [];          // 絞り込みに使っているタグ
 let closedFolders = {};       // 閉じているフォルダ（既定は開いた状態）
+
+function isSelected(path) {
+  const s = selection[path];
+  return !!(s && (s.normal || s.swap));
+}
 
 
 // --- 一覧の読み込み ---
@@ -32,8 +40,11 @@ async function loadLibrary() {
     const data = await api('/api/questions');
     libraryIndex = (data && Array.isArray(data.sets)) ? data : { sets: [] };
     await loadProgress();
-    selectedPaths = selectedPaths.filter(function (p) {
-      return libraryIndex.sets.some(function (s) { return s.path === p; });
+    // 無くなった問題集の選択は捨て、許可が外れた問題集の「逆」選択も外す
+    Object.keys(selection).forEach(function (p) {
+      const set = libraryIndex.sets.find(function (s) { return s.path === p; });
+      if (!set) { delete selection[p]; return; }
+      if (!set.allowSwap) selection[p].swap = false;
     });
     renderLibrary();
   } catch (err) {
@@ -128,24 +139,79 @@ function renderNode(node, container, depth) {
   });
 
   node.items.forEach(function (s) {
-    const row = document.createElement('label');
-    row.className = 'flex items-center py-1.5 cursor-pointer hover:bg-slate-50';
+    const row = document.createElement('div');
+    row.className = 'flex items-center py-1.5 hover:bg-slate-50';
     row.style.paddingLeft = (depth * 12 + 16) + 'px';
 
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = selectedPaths.indexOf(s.path) !== -1;
-    box.className = 'mr-2 w-5 h-5 accent-black';
-    box.addEventListener('change', function () {
-      const at = selectedPaths.indexOf(s.path);
-      if (box.checked) { if (at === -1) selectedPaths.push(s.path); }
-      else if (at !== -1) { selectedPaths.splice(at, 1); }
-      updateSelectionUI();
-    });
+    if (!selection[s.path]) selection[s.path] = { normal: false, swap: false };
+    const sel = selection[s.path];
+
+    // チェックを入れると白地から黒地＋白いチェックへ反転する、同じ見た目のチェックボックス。
+    // そのまま(normal)・逆(swap)の2つを線でつないで1組に見せることで区別する（文字は使わない）。
+    function makeCheckbox(dir, title) {
+      const wrap = document.createElement('label');
+      wrap.className = 'relative flex items-center justify-center w-5 h-5 border-2 border-black cursor-pointer shrink-0 bg-white';
+      wrap.title = title;
+
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = sel[dir];
+      box.className = 'sr-only';
+
+      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      mark.setAttribute('viewBox', '0 0 24 24');
+      mark.setAttribute('fill', 'none');
+      mark.setAttribute('stroke', 'currentColor');
+      mark.setAttribute('stroke-width', '3.5');
+      mark.setAttribute('stroke-linecap', 'round');
+      mark.setAttribute('stroke-linejoin', 'round');
+      mark.className.baseVal = 'hidden w-3 h-3 text-white';
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', 'M5 13l4 4L19 7');
+      mark.appendChild(path);
+
+      function refresh() {
+        wrap.classList.toggle('bg-black', box.checked);
+        wrap.classList.toggle('bg-white', !box.checked);
+        mark.classList.toggle('hidden', !box.checked);
+      }
+      box.addEventListener('change', function () {
+        sel[dir] = box.checked;
+        refresh();
+        updateSelectionUI();
+      });
+      refresh();
+
+      wrap.appendChild(box);
+      wrap.appendChild(mark);
+      return wrap;
+    }
+
+    if (s.allowSwap) {
+      // 2つのチェックボックスを短い線でつないで、1組の選択肢だと分かるようにする
+      const group = document.createElement('div');
+      group.className = 'flex items-center mr-2';
+      const line = document.createElement('div');
+      line.className = 'w-5 h-0.5 bg-black shrink-0';
+      group.appendChild(makeCheckbox('normal', 'そのまま出題する'));
+      group.appendChild(line);
+      group.appendChild(makeCheckbox('swap', '答えを問題として、逆向きに出題する'));
+      row.appendChild(group);
+    } else {
+      const solo = document.createElement('div');
+      solo.className = 'mr-2';
+      solo.appendChild(makeCheckbox('normal', 'そのまま出題する'));
+      row.appendChild(solo);
+    }
 
     const label = document.createElement('span');
-    label.className = 'text-slate-800';
+    label.className = 'text-slate-800 cursor-pointer';
     label.textContent = s.title || s.path.split('/').pop();
+    label.addEventListener('click', function () {
+      // タイトルをクリックしたときは、そのまま(normal)のチェックを切り替える（今まで通りの手軽さを残す）
+      sel.normal = !sel.normal;
+      renderLibrary();
+    });
 
     const count = document.createElement('span');
     count.className = 'ml-2 text-xs text-slate-400';
@@ -161,7 +227,6 @@ function renderNode(node, container, depth) {
       deleteSet(s);
     });
 
-    row.appendChild(box);
     row.appendChild(label);
     row.appendChild(count);
     row.appendChild(del);
@@ -186,26 +251,48 @@ function renderLibrary() {
 }
 
 function updateSelectionUI() {
-  const chosen = libraryIndex.sets.filter(function (s) {
-    return selectedPaths.indexOf(s.path) !== -1;
+  let setCount = 0, questionCount = 0;
+  libraryIndex.sets.forEach(function (s) {
+    const sel = selection[s.path];
+    if (!sel || (!sel.normal && !sel.swap)) return;
+    setCount++;
+    if (sel.normal) questionCount += (s.count || 0);
+    if (sel.swap) questionCount += (s.count || 0);   // 逆向きは同じ問題数の別出題として数える
   });
-  const total = chosen.reduce(function (a, s) { return a + (s.count || 0); }, 0);
-  librarySelected.textContent = chosen.length === 0
+  librarySelected.textContent = setCount === 0
     ? '未選択'
-    : (chosen.length + '冊 / ' + total + '問を選択中');
-  btnStartSelected.disabled = chosen.length === 0;
+    : (setCount + '冊 / ' + questionCount + '問を選択中');
+  btnStartSelected.disabled = setCount === 0;
+}
+
+// 答えを問題として出す「逆向き」の1問を作る。
+// 答えが「／」で複数に分かれている問題は、そのまま問題文として表示される
+// （「走る／経営する」のように）。元の問題文はその答えになる。
+// id は元と変えて、正解・不正解の記録（記憶予測）を順方向とは別に持つ
+// （逆向きを覚えていることと、順向きを覚えていることは別なので）。
+function makeSwappedQuestion(q) {
+  return {
+    id: q.id + ':swap',
+    question: splitAnswers(q.answer).join('／'),
+    answer: String(q.question).replace(/／/g, '／／'),
+    commentary: q.commentary || ''
+  };
 }
 
 // --- 選択した問題集で開始 ---
 async function startFromSelection() {
-  if (selectedPaths.length === 0) return;
+  const paths = Object.keys(selection).filter(isSelected);
+  if (paths.length === 0) return;
   btnStartSelected.disabled = true;
   btnStartSelected.textContent = '読み込み中…';
   try {
     let merged = [];
-    for (const p of selectedPaths) {
+    for (const p of paths) {
+      const sel = selection[p];
       const set = await api('/api/questions?path=' + encodeURIComponent(p));
-      if (Array.isArray(set.questions)) merged = merged.concat(set.questions);
+      if (!Array.isArray(set.questions)) continue;
+      if (sel.normal) merged = merged.concat(set.questions);
+      if (sel.swap) merged = merged.concat(set.questions.map(makeSwappedQuestion));
     }
     if (merged.length === 0) throw new Error('選んだ問題集に問題が入っていません。');
     startLearning(merged);
@@ -223,8 +310,7 @@ async function deleteSet(set) {
                '解答履歴は残るので、同じ問題集を入れ直せば成績も戻ります。')) return;
   try {
     await api('/api/questions?path=' + encodeURIComponent(set.path), { method: 'DELETE' });
-    const at = selectedPaths.indexOf(set.path);
-    if (at !== -1) selectedPaths.splice(at, 1);
+    delete selection[set.path];
     await loadLibrary();
   } catch (err) {
     if (!err.unauthorized) alert(err.message);

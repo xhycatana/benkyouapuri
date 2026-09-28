@@ -6,6 +6,8 @@
 //   GET  /api/questions?rebuild=1      -> リポジトリを走査して一覧を作り直す
 //   GET  /api/questions?kind=progress  -> 解答履歴の集計
 //   GET  /api/questions?kind=history&month=YYYY-MM -> 解答ログ（月ごと）
+//   GET  /api/questions?kind=studytime&month=YYYY-MM -> 勉強時間の記録（月ごと）
+//   GET  /api/questions?kind=studytimetotal -> 勉強時間の累計（全期間）
 //   POST /api/questions                -> 問題集を保存する
 //   DELETE /api/questions?path=…       -> 問題集を削除する
 //
@@ -21,7 +23,9 @@ const SETS_DIR = 'sets';           // 問題集の置き場所
 const INDEX_FILE = 'index.json';   // 一覧。保存のたびに更新する
 const PROGRESS_FILE = 'progress.json'; // 解答履歴の集計。問題ごとの成績
 const HISTORY_DIR = 'history';     // 解答ログ（1回ごと）。月ごとのファイルに分ける
+const STUDY_TIME_DIR = 'studytime'; // 勉強時間の記録（区切りごと）。月ごとのファイルに分ける
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // --- 合言葉の確認 ---------------------------------------------------------
 // 文字列比較にかかる時間から中身を推測されないよう、長さを揃えて比較する。
@@ -143,6 +147,7 @@ async function rebuildIndex() {
           path: rel,
           title: j.title || rel.split('/').pop(),
           tags: Array.isArray(j.tags) ? j.tags : [],
+          allowSwap: !!j.allowSwap,
           count: Array.isArray(j.questions) ? j.questions.length : 0,
           updated_at: j.updated_at || null
         };
@@ -243,6 +248,61 @@ function mergeHistoryEntries(base, incoming) {
   return base;
 }
 
+// --- 毎日の勉強時間（区切りごと。1件が「数え続けた一続きの時間」） -----------
+// 履歴ログと同じ形（月ごとのファイル、id で重複除去）なので、合成には
+// 上の mergeHistoryEntries をそのまま使う。
+function studyTimeFile(month) {
+  return STUDY_TIME_DIR + '/' + month + '.json';
+}
+
+// 累計（全期間の合計）。月ごとのファイルを毎回全部読んで合計しなくても済むよう、
+// 新しく増えた分をそのつど足しておく1つの小さなファイルに持たせる。
+// 月ごとのファイルは消さないので、これは「持っている記録の合計」を先に計算してあるだけで、
+// 別の記録というわけではない。
+const STUDY_TIME_TOTAL_FILE = STUDY_TIME_DIR + '/total.json';
+
+async function readStudyTimeTotal() {
+  const f = await readFile(STUDY_TIME_TOTAL_FILE);
+  if (!f) return { total_seconds: 0, updated_at: null };
+  try {
+    const j = JSON.parse(f.text);
+    return { total_seconds: Number(j.total_seconds) > 0 ? Number(j.total_seconds) : 0, updated_at: j.updated_at || null };
+  } catch (err) {
+    return { total_seconds: 0, updated_at: null };
+  }
+}
+
+async function addStudyTimeTotal(addSeconds) {
+  if (!(addSeconds > 0)) return;
+  const current = await readStudyTimeTotal();
+  const saved = { total_seconds: current.total_seconds + addSeconds, updated_at: new Date().toISOString() };
+  await writeFile(STUDY_TIME_TOTAL_FILE, JSON.stringify(saved, null, 2), '勉強時間の累計を更新');
+}
+
+async function readStudyTimeMonth(month) {
+  const f = await readFile(studyTimeFile(month));
+  if (!f) return { updated_at: null, entries: [] };
+  try {
+    const j = JSON.parse(f.text);
+    if (!Array.isArray(j.entries)) j.entries = [];
+    return j;
+  } catch (err) {
+    return { updated_at: null, entries: [] };
+  }
+}
+
+function sanitizeStudyTimeEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const id = (typeof e.id === 'string' && e.id) ? e.id : null;
+  const date = (typeof e.date === 'string' && DATE_RE.test(e.date)) ? e.date : null;
+  // 1件は「数え続けた一続きの時間」なので、1日（86400秒）を超えることはあり得ない。
+  // 端末の時計が狂った場合などにおかしな値が紛れ込まないよう、上限で弾く。
+  const seconds = (typeof e.seconds === 'number' && e.seconds > 0 && e.seconds <= 86400)
+    ? Math.round(e.seconds) : null;
+  if (!id || !date || !seconds) return null;
+  return { id: id, date: date, seconds: seconds };
+}
+
 // --- 入力の検証 -----------------------------------------------------------
 function cleanPath(p) {
   if (typeof p !== 'string') return null;
@@ -284,6 +344,21 @@ module.exports = async (req, res) => {
           return;
         }
         res.status(200).json(await readHistoryMonth(month));
+        return;
+      }
+
+      if (req.query.kind === 'studytime') {
+        const month = typeof req.query.month === 'string' ? req.query.month : '';
+        if (!MONTH_RE.test(month)) {
+          res.status(400).json({ error: '月の指定が正しくありません（例: 2026-09）。' });
+          return;
+        }
+        res.status(200).json(await readStudyTimeMonth(month));
+        return;
+      }
+
+      if (req.query.kind === 'studytimetotal') {
+        res.status(200).json(await readStudyTimeTotal());
         return;
       }
 
@@ -357,6 +432,35 @@ module.exports = async (req, res) => {
         return;
       }
 
+      // 勉強時間の保存（月ごとのファイルに分けて追加する。仕組みは全履歴ログと同じ）
+      if (body.kind === 'studytime') {
+        const groups = Array.isArray(body.groups) ? body.groups : [];
+        let added = 0;
+        let addedSeconds = 0;   // 新しく増えた分だけを、消えない累計に上乗せする
+        for (const g of groups) {
+          const month = (g && typeof g.month === 'string') ? g.month : '';
+          if (!MONTH_RE.test(month)) continue;
+          const entries = (g && Array.isArray(g.entries) ? g.entries : [])
+            .map(sanitizeStudyTimeEntry)
+            .filter(Boolean);
+          if (entries.length === 0) continue;
+
+          const current = await readStudyTimeMonth(month);
+          const before = current.entries.length;
+          const merged = mergeHistoryEntries(current.entries, entries);
+          if (merged.length === before) continue;
+
+          const newlyAdded = merged.slice(before);
+          added += newlyAdded.length;
+          addedSeconds += newlyAdded.reduce(function (a, e) { return a + e.seconds; }, 0);
+          const saved = { updated_at: new Date().toISOString(), entries: merged };
+          await writeFile(studyTimeFile(month), JSON.stringify(saved, null, 2), '勉強時間を更新（' + month + '）');
+        }
+        await addStudyTimeTotal(addedSeconds);
+        res.status(200).json({ saved: true, added: added });
+        return;
+      }
+
       const path = cleanPath(body.path);
       if (!path) {
         res.status(400).json({ error: '保存先を入力してください（例: 世界史/近代/フランス革命）。' });
@@ -389,6 +493,7 @@ module.exports = async (req, res) => {
         title: String(body.title || path.split('/').pop()).trim(),
         path: path,
         tags: tags,
+        allowSwap: !!body.allowSwap,
         updated_at: new Date().toISOString(),
         questions: questions
       };
@@ -406,7 +511,7 @@ module.exports = async (req, res) => {
       // 一覧にも反映する
       const index = await readIndex();
       const entry = {
-        path: path, title: set.title, tags: tags,
+        path: path, title: set.title, tags: tags, allowSwap: set.allowSwap,
         count: questions.length, updated_at: set.updated_at
       };
       const at = index.sets.findIndex(function (s) { return s.path === path; });

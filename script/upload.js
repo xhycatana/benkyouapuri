@@ -6,6 +6,7 @@
 function resetUploadForm() {
   uploadPath.value = '';
   uploadTags.value = '';
+  uploadAllowSwap.checked = false;
   uploadCsv.value = '';
   uploadMessage.textContent = '';
   uploadMessage.className = 'text-xs';
@@ -99,6 +100,7 @@ async function saveUpload(overwrite) {
     path: path,
     title: path.split('/').pop(),
     tags: uploadTags.value.split(',').map(function (t) { return t.trim(); }).filter(Boolean),
+    allowSwap: uploadAllowSwap.checked,
     questions: rows.map(function (r) {
       return { question: r.question, answer: r.answer, commentary: r.commentary };
     }),
