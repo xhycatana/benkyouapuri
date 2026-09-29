@@ -11,12 +11,12 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.32.3">
+  <link rel="stylesheet" href="style.css?v=6.32.4">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
   <!-- 背景の罫線（出題・丸つけ中だけ表示。ノートのような、書く目安になる横線） -->
-  <div id="ruled-lines" class="hidden absolute left-0 right-0 bottom-0 pointer-events-none"></div>
+  <div id="ruled-lines" class="hidden absolute left-0 right-0 bottom-0 z-0 pointer-events-none"></div>
 
   <!-- 全画面手書きキャンバス -->
   <canvas id="app-global-canvas" class="absolute inset-0 w-full h-full block cursor-crosshair z-0 touch-none"></canvas>
@@ -176,7 +176,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.32.3</span>
+              <span class="cursor-default select-none font-mono">v6.32.4</span>
             </div>
           </div>
         </section>
@@ -443,8 +443,8 @@
             <h3 class="text-sm font-bold text-slate-900 border-b border-black pb-2 mb-2">1. 学習の流れ</h3>
             <p>ホーム画面で問題集を選び、<strong>「選択した問題集で開始」</strong>を押します。まだ自分の問題集が無い場合は、ホーム画面下の<strong>「覚えてみる」</strong>から、難読漢字の読み方20問をまっさらな状態から試せます。</p>
             <p>画面全体に手書きで答え、<strong>「決定」</strong>で次の問題へ進みます。全問書き終えると丸つけに移ります。</p>
-            <p>画面は真ん中の線で左右2ページに分かれていて、左のページから書いていきます。書ききれないときは、下のページ送りの<strong>「＋」</strong>でページを足せます。めくると1ページずつ進むので、右にあったページが左に移り、1つ前のページを見ながら続きを書けます。<strong>「‹」「›」</strong>で前後に行き来でき、丸つけのときも同じようにめくって見られます。</p>
-            <p>右上の、歯車の左隣のボタンで、<strong>1ページ表示と見開き（2ページ）表示</strong>をワンクリックで切り替えられます。切り替えると、書いた内容はページの新しい形に合わせて伸び縮みします。</p>
+            <p>書ききれないときは、下のページ送りの<strong>「＋」</strong>でページを足せます。<strong>「‹」「›」</strong>で前後のページに行き来でき、丸つけのときも同じようにめくって見られます。</p>
+            <p>右上の、歯車の左隣のボタンで、<strong>1ページ表示（既定）と見開き（2ページ）表示</strong>をワンクリックで切り替えられます。見開きにすると、画面は真ん中の線で左右2ページに分かれ、めくると1ページずつ進むので、右にあったページが左に移り、1つ前のページを見ながら続きを書けます。切り替えても、書いた内容はページの新しい形に合わせて伸び縮みするだけで消えません。</p>
             <p><strong>消去ボタン</strong>は、見えているページを消します。何も書いていないページの後ろにはページを足せず、白紙の最後のページは前に戻ると消えます。</p>
             <p>模範解答と解説を見て、自分で <strong>⭕️（合ってた）／ ❌（間違えた）</strong>を押します。</p>
             <p>❌ を押した問題だけ、<strong>正解するまでその場で繰り返し出題されます。</strong>全問 ⭕️ になったら次のグループへ、なければホーム画面へ戻ります。</p>
@@ -648,17 +648,17 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.32.3"></script>
-  <script src="script/dom.js?v=6.32.3"></script>
-  <script src="script/util.js?v=6.32.3"></script>
-  <script src="script/memory.js?v=6.32.3"></script>
-  <script src="script/api.js?v=6.32.3"></script>
-  <script src="script/progress.js?v=6.32.3"></script>
-  <script src="script/studytime.js?v=6.32.3"></script>
-  <script src="script/canvas.js?v=6.32.3"></script>
-  <script src="script/quiz.js?v=6.32.3"></script>
-  <script src="script/library.js?v=6.32.3"></script>
-  <script src="script/upload.js?v=6.32.3"></script>
-  <script src="script/app.js?v=6.32.3"></script>
+  <script src="script/state.js?v=6.32.4"></script>
+  <script src="script/dom.js?v=6.32.4"></script>
+  <script src="script/util.js?v=6.32.4"></script>
+  <script src="script/memory.js?v=6.32.4"></script>
+  <script src="script/api.js?v=6.32.4"></script>
+  <script src="script/progress.js?v=6.32.4"></script>
+  <script src="script/studytime.js?v=6.32.4"></script>
+  <script src="script/canvas.js?v=6.32.4"></script>
+  <script src="script/quiz.js?v=6.32.4"></script>
+  <script src="script/library.js?v=6.32.4"></script>
+  <script src="script/upload.js?v=6.32.4"></script>
+  <script src="script/app.js?v=6.32.4"></script>
 </body>
 </html>

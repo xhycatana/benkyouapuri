@@ -306,7 +306,7 @@ btnBackToImport.addEventListener('click', () => {
 // --- 見た目だけの設定（問題文の文字の大きさ・背景の罫線・1ページ/見開き） ---
 // 記憶モデル(memorySettings)とは別に持つ。
 const STORAGE_KEY_DISPLAY = 'flashmemo_displaySettings';
-let displaySettings = { questionFontSize: 24, showRuledLines: true, pageSpread: 2 };
+let displaySettings = { questionFontSize: 24, showRuledLines: true, pageSpread: 1 };
 
 try {
   const savedDisplay = JSON.parse(localStorage.getItem(STORAGE_KEY_DISPLAY) || 'null');
@@ -487,6 +487,23 @@ btnToggleSpread.addEventListener('click', function () {
 
 // 見開きの真ん中の区切り線。罫線と同じ範囲（罫線の一番上から一番下まで）に伸ばす。
 
+const RULE_HEIGHT = 32;
+
+// 罫線を1本ずつ、実際の要素として置く。CSSの背景パターンの位相合わせ（position の
+// ずらし量）は計算を間違えやすく、実際の見た目とずれる原因になっていたため、
+// 「文字の1行目の位置」から単純な足し算だけで済むこの方式に変えた。
+// phase: 罫線を置き始める位置（ruledLines 自身の一番上からの距離、0以上）
+function layoutRuledLines(phase) {
+  ruledLines.innerHTML = '';
+  const height = window.innerHeight - ruledLines.getBoundingClientRect().top;
+  for (let y = phase; y < height; y += RULE_HEIGHT) {
+    const line = document.createElement('div');
+    line.className = 'ruled-line';
+    line.style.top = y + 'px';
+    ruledLines.appendChild(line);
+  }
+}
+
 function placePageDivider() {
   const drawing = isDrawingPhase();
   const showDivider = drawing && displaySettings.pageSpread !== 1;   // 1ページ表示なら区切る線は不要
@@ -496,27 +513,34 @@ function placePageDivider() {
 
   // 罫線は進捗バーの下、問題文・模範解答の後ろから出す。実際のノートと同じように、
   // 文字（問題文・模範解答・解説。行の高さは leading-[32px] で罫線の間隔と揃えてある）が
-  // 罫線の上に乗って見えるよう、罫線の位置を文字の1行目に合わせてずらす。
+  // 罫線の上に乗って見えるよう、罫線の1本目を文字の1行目の位置に合わせる。
   const progressHeader = currentPhase === 'test' ? testProgressHeader : reviewProgressHeader;
   const ruledTop = progressHeader.getBoundingClientRect().bottom;
   ruledLines.style.top = ruledTop + 'px';
 
-  const RULE_HEIGHT = 32;
-  let ruleOffset = 0;
   const textRef = currentPhase === 'test' ? testQuestion : reviewInfoBox.firstElementChild;
-  if (textRef) {
-    const localY = textRef.getBoundingClientRect().top - ruledTop;
-    ruleOffset = ((localY % RULE_HEIGHT) + RULE_HEIGHT) % RULE_HEIGHT;
-    ruledLines.style.backgroundPositionY = ruleOffset + 'px';
-  }
+  // phase は「罫線の帯（ruledLines）自身の一番上」から、1本目の罫線までの距離。
+  // 文字の1行目より上に、行の高さ未満の隙間しか残らないようにする
+  // （それ以上余ると、そこだけ罫線の無い帯として上に飛び出て見える）。
+  const phase = textRef
+    ? (((textRef.getBoundingClientRect().top - ruledTop) % RULE_HEIGHT) + RULE_HEIGHT) % RULE_HEIGHT
+    : 0;
+  layoutRuledLines(phase);
 
   if (!showDivider) return;
 
-  // 区切り線は、一番上の罫線（ぴったり）から画面の一番下まで伸ばす。
-  // 罫線の帯の上端（ruledTop）から引くと、最初の罫線より上にはみ出して見えるため、ずらし分を足す。
-  const firstRuleTop = ruledTop + ruleOffset;
+  // 区切り線は、1本目の罫線（ぴったり）から画面の一番下まで伸ばす
+  const firstRuleTop = ruledTop + phase;
   pageDivider.style.top = firstRuleTop + 'px';
   pageDivider.style.height = (window.innerHeight - firstRuleTop) + 'px';
+}
+
+// iOS で Web フォントの読み込みが遅れて文字の位置が後からずれることがあるため、
+// フォントの読み込みが終わった時点でもう一度、罫線・区切り線の位置を合わせ直す。
+if (window.document && document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(function () {
+    if (isDrawingPhase()) placePageDivider();
+  });
 }
 
 window.addEventListener('resize', placePageDivider);
