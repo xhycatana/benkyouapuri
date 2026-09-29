@@ -17,6 +17,10 @@ let answeredThisSession = {};  // このセッションで既に採点した問�
 
 let currentAnswerItems = [];        // 丸つけ中の答えを「／」で分けたもの（1件なら通常表示）
 let currentAnswerItemResults = [];  // 上の各項目の判定。true/false、未判定は undefined
+let currentAnswerItemLocked = [];   // 前の周で正解済みなので、今回は判定し直させない項目
+// 複数答えの問題が間違って再出題されたとき、前の周で○だった項目を覚えておく（問題IDごと）。
+// 再挑戦のたびに全部を判定し直させないための記録。true の項目だけ持ち、消えたら未判定として扱う。
+let multiAnswerProgress = {};
 let currentPhase = 'import';   // 'import', 'upload', 'help', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;

@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.32.0">
+  <link rel="stylesheet" href="style.css?v=6.32.1">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -172,7 +172,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.32.0</span>
+              <span class="cursor-default select-none font-mono">v6.32.1</span>
             </div>
           </div>
         </section>
@@ -297,7 +297,7 @@
               <div id="test-progress-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
             </div>
             <div class="flex justify-between items-center text-xs text-slate-400 px-2">
-              <span id="test-progress-text">問題 0 / 0</span>
+              <span><span id="test-progress-text">問題 0 / 0</span><span id="test-answer-count-hint" class="ml-2"></span></span>
               <span id="test-prob-indicator" class="font-mono text-[10px]">記憶予測確率: - %</span>
             </div>
           </div>
@@ -305,8 +305,8 @@
           <div id="test-card-container" class="bg-transparent rounded-none flex-grow flex flex-col justify-between overflow-hidden w-full">
             
             <div id="test-question-box" class="p-2 md:p-4">
-              <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider">QUESTION</span>
-              <div id="test-question" class="font-bold text-slate-900 mt-1 leading-relaxed">
+              <div class="flex text-base font-bold text-slate-900 leading-[32px]">
+                <span class="shrink-0">問題：</span><span id="test-question" class="flex-1 min-w-0"></span>
               </div>
             </div>
 
@@ -352,27 +352,27 @@
               <div id="review-progress-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
             </div>
             <div class="flex justify-between items-center text-xs text-slate-400 px-2">
-              <span id="review-progress-text">丸付け 0 / 0</span>
+              <span><span id="review-progress-text">丸付け 0 / 0</span><span id="review-answer-count-hint" class="ml-2"></span></span>
             </div>
           </div>
 
           <div id="review-card-container" class="bg-transparent rounded-none flex-grow flex flex-col justify-between overflow-hidden w-full">
             
-            <div id="review-info-box" class="p-2 md:p-4 space-y-3">
-              <div class="text-base md:text-lg font-bold text-slate-800">
-                <span>問題：</span><span id="review-question"></span>
+            <div id="review-info-box" class="p-2 md:p-4 space-y-0">
+              <div class="flex text-base font-bold text-slate-800 leading-[32px]">
+                <span class="shrink-0">問題：</span><span id="review-question" class="flex-1 min-w-0"></span>
               </div>
 
-              <div id="review-model-answer-single" class="text-base md:text-lg font-bold text-black">
-                <span>模範解答：</span><span id="review-model-answer"></span>
+              <div id="review-model-answer-single" class="flex text-base font-bold text-black leading-[32px]">
+                <span class="shrink-0">模範解答：</span><span id="review-model-answer" class="flex-1 min-w-0"></span>
               </div>
 
-              <div id="review-model-answer-list" class="hidden space-y-1">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">模範解答（1つずつ判定）</p>
+              <div id="review-model-answer-list" class="hidden">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-[32px]">模範解答（1つずつ判定）</p>
               </div>
 
-              <div id="review-commentary-box" class="text-xs md:text-sm text-slate-500 leading-relaxed">
-                <span>解説：</span><span id="review-commentary"></span>
+              <div id="review-commentary-box" class="flex text-base text-slate-500 leading-[32px]">
+                <span class="shrink-0">解説：</span><span id="review-commentary" class="flex-1 min-w-0"></span>
               </div>
             </div>
 
@@ -478,6 +478,13 @@
             </div>
 
             <div class="pt-1">
+              <p class="font-bold text-slate-800">答えが複数あるとき</p>
+              <p>英単語の意味を複数答えさせる問題などは、答えの欄に「／」で区切って複数書けます。</p>
+              <p class="font-mono text-[10px] bg-slate-50 border border-slate-200 p-2">run,走る／経営する／流れる／上映する</p>
+              <p>出題画面・丸つけ画面のどちらにも、いくつ答えればいいかが出ます。正解するまでの再出題では、前回すでに正解した項目名も表示されるので、書き直す必要はありません。丸つけ画面の一覧にも、前回⭕️だった項目は出さず、間違えた項目だけが並ぶので、そこだけに集中して判定できます。本物の「／」を書きたいときは「／／」と重ねます。</p>
+            </div>
+
+            <div class="pt-1">
               <p class="font-bold text-slate-800">穴埋め問題（JSON）</p>
               <p>空欄を含む全文を見出しにして、その下に空欄の記号ごとの答えを書きます。全文を見せたまま、空欄1つずつが1問として出題されます。</p>
               <p class="font-mono text-[10px] bg-slate-50 border border-slate-200 p-2 whitespace-pre">{
@@ -511,6 +518,7 @@
             <p><strong>正解したときの伸び</strong> … 正解すると記憶の寿命がこの倍率で延びます。</p>
             <p><strong>間違えたときに残す割合</strong> … よく覚えていた問題ほど、間違えても間隔を長く保ちます。</p>
             <p><strong>間違えたときの最短間隔</strong> … 寿命がこれより短くなることはありません。</p>
+            <p><strong>解き直しで正解したときの伸び</strong> … 間違えた直後にその場で解き直して正解したときだけ、寿命をこの倍率で少しだけ伸ばします。</p>
             <p><strong>背景の罫線</strong> … 出題・丸つけ中の背景に出すノートのような横線を、ON/OFFできます。</p>
           </div>
 
@@ -579,6 +587,14 @@
           <p class="text-[10px] text-slate-400 mt-0.5">これより短くはなりません</p>
         </div>
 
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">
+            解き直しで正解したときの伸び: <span id="retry-boost-val" class="text-blue-600 font-bold">1.2 倍</span>
+          </label>
+          <input type="range" id="retry-boost-input" min="1.0" max="2.0" step="0.1" value="1.2" class="w-full accent-black">
+          <p class="text-[10px] text-slate-400 mt-0.5">間違えた直後にその場で解き直して正解したときだけの伸びです。上の「正解したときの伸び」より小さくしてください</p>
+        </div>
+
         <div class="pt-1 border-t border-slate-100">
           <label class="block font-bold text-slate-700 mb-1 pt-2">
             問題文の文字の大きさ: <span id="question-font-val" class="text-blue-600 font-bold">24 px</span>
@@ -626,17 +642,17 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.32.0"></script>
-  <script src="script/dom.js?v=6.32.0"></script>
-  <script src="script/util.js?v=6.32.0"></script>
-  <script src="script/memory.js?v=6.32.0"></script>
-  <script src="script/api.js?v=6.32.0"></script>
-  <script src="script/progress.js?v=6.32.0"></script>
-  <script src="script/studytime.js?v=6.32.0"></script>
-  <script src="script/canvas.js?v=6.32.0"></script>
-  <script src="script/quiz.js?v=6.32.0"></script>
-  <script src="script/library.js?v=6.32.0"></script>
-  <script src="script/upload.js?v=6.32.0"></script>
-  <script src="script/app.js?v=6.32.0"></script>
+  <script src="script/state.js?v=6.32.1"></script>
+  <script src="script/dom.js?v=6.32.1"></script>
+  <script src="script/util.js?v=6.32.1"></script>
+  <script src="script/memory.js?v=6.32.1"></script>
+  <script src="script/api.js?v=6.32.1"></script>
+  <script src="script/progress.js?v=6.32.1"></script>
+  <script src="script/studytime.js?v=6.32.1"></script>
+  <script src="script/canvas.js?v=6.32.1"></script>
+  <script src="script/quiz.js?v=6.32.1"></script>
+  <script src="script/library.js?v=6.32.1"></script>
+  <script src="script/upload.js?v=6.32.1"></script>
+  <script src="script/app.js?v=6.32.1"></script>
 </body>
 </html>

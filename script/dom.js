@@ -75,10 +75,12 @@ const appHeader = document.getElementById('app-header');
 const testQuestion = document.getElementById('test-question');
 const testQuestionBox = document.getElementById('test-question-box');
 const reviewInfoBox = document.getElementById('review-info-box');
+const pageDivider = document.getElementById('page-divider');
 const testProgressHeader = document.getElementById('test-progress-header');
 const reviewProgressHeader = document.getElementById('review-progress-header');
-const pageDivider = document.getElementById('page-divider');
 const testProbIndicator = document.getElementById('test-prob-indicator');
+const testAnswerCountHint = document.getElementById('test-answer-count-hint');
+const reviewAnswerCountHint = document.getElementById('review-answer-count-hint');
 const btnClearTestCanvas = document.getElementById('btn-clear-test-canvas');
 const btnSubmitTest = document.getElementById('btn-submit-test');
 

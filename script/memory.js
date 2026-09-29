@@ -12,6 +12,7 @@ let memorySettings = {
   ease: 2.5,          // 正解したとき寿命を何倍にするか
   lapseKeep: 0.2,     // 間違えたとき、以前の寿命をどれだけ残すか
   failMinutes: 30,    // 間違えたときの寿命の下限（分）
+  retryBoost: 1.2,    // 間違えた直後の解き直しで正解したとき、寿命を何倍にするか（ease より小さくする）
   groupSize: 0        // 何問ずつに区切るか（長時間の勉強用）。0 で区切らない
 };
 
@@ -73,7 +74,17 @@ function sortQuestionsBySrs(list) {
 // そこでの正解まで数えると「数分間覚えていただけ」を長期記憶と誤認してしまう。
 // 記録するのは、そのセッションで最初に答えた結果だけ。
 function updateSrsMetrics(question, isCorrect) {
-  if (answeredThisSession[question.id]) return;
+  if (answeredThisSession[question.id]) {
+    // 間違えた直後の解き直し（同じセッションで2回目以降）。
+    // 数十秒前に答えを見ただけなので、通常の正解（ease）と同じようには伸ばさない。
+    // ただし、正解できたこと自体は多少は覚えている証拠なので、それより小さい倍率で少しだけ伸ばす。
+    // 履歴ログには残さない（このログは実際に間隔を空けて解いたときの記録として使うため）。
+    if (isCorrect && question.lifespan > 0) {
+      question.lifespan *= memorySettings.retryBoost;
+      recordProgress(question);
+    }
+    return;
+  }
   answeredThisSession[question.id] = true;
 
   // 全履歴ログ（あとで忘却曲線のパラメータを学習するときに使う）。
@@ -138,6 +149,11 @@ setupSlider('fail-input', 'fail-val', val => {
   saveMemorySettings();
   return val + ' 分';
 });
+setupSlider('retry-boost-input', 'retry-boost-val', val => {
+  memorySettings.retryBoost = parseFloat(val);
+  saveMemorySettings();
+  return val + ' 倍';
+});
 // 区切りの数はつまみではなく数値入力なので、個別に受け取る
 inputGroupSize.addEventListener('input', function () {
   memorySettings.groupSize = Math.max(0, parseInt(inputGroupSize.value, 10) || 0);
@@ -149,7 +165,8 @@ function applyMemorySettingsToUI() {
   const pairs = [
     ['ease-input', 'ease-val', memorySettings.ease, ' 倍'],
     ['lapse-input', 'lapse-val', Math.round(memorySettings.lapseKeep * 100), ' %'],
-    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分']
+    ['fail-input', 'fail-val', memorySettings.failMinutes, ' 分'],
+    ['retry-boost-input', 'retry-boost-val', memorySettings.retryBoost, ' 倍']
   ];
   inputGroupSize.value = memorySettings.groupSize;
 

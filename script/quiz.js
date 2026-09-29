@@ -238,9 +238,10 @@ function startLearning(problemData) {
   currentList = [...studyGroups[currentGroupIndex]];
 
   userAnswers = {};
-  userHasDrawn = {}; 
+  userHasDrawn = {};
   wrongQuestions = [];
   answeredThisSession = {};
+  multiAnswerProgress = {};
 
   switchPhase('test');
 }
@@ -480,11 +481,7 @@ btnToggleSpread.addEventListener('click', function () {
   setPageSpread(displaySettings.pageSpread === 1 ? 2 : 1);
 });
 
-// 見開きの真ん中の区切り線。画面のちょうど真ん中に短く引く。
-// 問題文が長いときや解説があるときは、問題文とボタンにかからない範囲まで削る。
-// 問題文の長さ・丸つけの解説の有無・文字の大きさで削る量が変わるので、そのたびに置き直す。
-const PAGE_DIVIDER_GAP = 16;
-const PAGE_DIVIDER_RATIO = 0.07;   // 線の長さ（画面の高さに対する割合）
+// 見開きの真ん中の区切り線。罫線と同じ範囲（罫線の一番上から一番下まで）に伸ばす。
 
 function placePageDivider() {
   const drawing = isDrawingPhase();
@@ -493,26 +490,26 @@ function placePageDivider() {
   ruledLines.classList.toggle('hidden', !drawing || !displaySettings.showRuledLines);
   if (!drawing) return;
 
-  // 罫線は進捗バーの下から出す。上端まで敷くと、進捗バーの後ろに線が透けて見えてしまうため
+  // 罫線は進捗バーの下、問題文・模範解答の後ろから出す。実際のノートと同じように、
+  // 文字（問題文・模範解答・解説。行の高さは leading-[32px] で罫線の間隔と揃えてある）が
+  // 罫線の上に乗って見えるよう、罫線の位置を文字の1行目に合わせてずらす。
   const progressHeader = currentPhase === 'test' ? testProgressHeader : reviewProgressHeader;
-  ruledLines.style.top = progressHeader.getBoundingClientRect().bottom + 'px';
+  const ruledTop = progressHeader.getBoundingClientRect().bottom;
+  ruledLines.style.top = ruledTop + 'px';
+
+  const RULE_HEIGHT = 32;
+  const textRef = currentPhase === 'test' ? testQuestion : reviewInfoBox.firstElementChild;
+  if (textRef) {
+    const localY = textRef.getBoundingClientRect().top - ruledTop;
+    const offset = ((localY % RULE_HEIGHT) + RULE_HEIGHT) % RULE_HEIGHT;
+    ruledLines.style.backgroundPositionY = offset + 'px';
+  }
 
   if (!showDivider) return;
 
-  const above = currentPhase === 'test' ? testQuestionBox : reviewInfoBox;
-  const below = currentPhase === 'test' ? btnSubmitTest : btnClearReviewCanvas;
-  const minTop = above.getBoundingClientRect().bottom + PAGE_DIVIDER_GAP;
-  const maxBottom = below.getBoundingClientRect().top - PAGE_DIVIDER_GAP;
-  const center = window.innerHeight / 2;
-  const half = window.innerHeight * PAGE_DIVIDER_RATIO / 2;
-  const top = Math.max(center - half, minTop);
-  const bottom = Math.min(center + half, maxBottom);
-  if (bottom - top < 4) {
-    pageDivider.classList.add('hidden');
-    return;
-  }
-  pageDivider.style.top = top + 'px';
-  pageDivider.style.height = (bottom - top) + 'px';
+  // 区切り線は、罫線と同じ範囲（罫線の一番上から一番下まで）に伸ばす
+  pageDivider.style.top = ruledTop + 'px';
+  pageDivider.style.height = (window.innerHeight - ruledTop) + 'px';
 }
 
 window.addEventListener('resize', placePageDivider);
@@ -585,14 +582,28 @@ function initTestPhase() {
   showQuestion();
 }
 
+// 答えが「／」で複数に分かれている問題は、いくつ答えればいいかを示す。
+// 前の周で正解済みの項目があれば、それも名前で見せる（もう書かなくていい・
+// 判定し直さなくていいと分かるように）。出題中・丸つけ中の両方で使う。
+function answerCountHintText(activeQuestion) {
+  const answerItems = splitAnswers(activeQuestion.answer);
+  if (answerItems.length <= 1) return '';
+  const carriedOver = multiAnswerProgress[activeQuestion.id] || [];
+  const known = answerItems.filter((_, i) => carriedOver[i] === true);
+  return known.length > 0
+    ? `・残り${answerItems.length - known.length}つ（${known.join('・')}は正解済み）`
+    : `・${answerItems.length}つ答える`;
+}
+
 function showQuestion() {
   updateTaskProgress('test');
   const activeQuestion = currentList[currentIndex];
-  if (!activeQuestion) return; 
+  if (!activeQuestion) return;
 
   testQuestion.innerText = activeQuestion.question;
   const prob = calculateProbability(activeQuestion);
   testProbIndicator.innerText = `記憶予測確率: ${(prob * 100).toFixed(1)}%`;
+  testAnswerCountHint.textContent = answerCountHintText(activeQuestion);
 
   globalCanvas.clear();
   globalCanvas.resizeCanvas();
@@ -633,11 +644,16 @@ function showReviewItem() {
   if (!activeQuestion) return;
 
   reviewQuestion.innerText = activeQuestion.question;
+  reviewAnswerCountHint.textContent = answerCountHintText(activeQuestion);
 
   // 答えが「／」で複数に分かれている問題（例：英単語の意味を複数答える）は、
   // 1つずつ判定できるように、通常の一括表示とは別の見た目に切り替える。
+  // 前の周で正解していた項目は、判定し直させない。一覧にも出さず（問題文の横のヒントで
+  // 済んでいることは分かるので）、まだ判定していない項目だけを並べる。
   currentAnswerItems = splitAnswers(activeQuestion.answer);
-  currentAnswerItemResults = currentAnswerItems.map(() => undefined);
+  const carriedOver = multiAnswerProgress[activeQuestion.id] || [];
+  currentAnswerItemResults = currentAnswerItems.map((_, i) => (carriedOver[i] === true) ? true : undefined);
+  currentAnswerItemLocked = currentAnswerItemResults.map((r) => r === true);
   const isMultiAnswer = currentAnswerItems.length > 1;
 
   reviewModelAnswerSingle.classList.toggle('hidden', isMultiAnswer);
@@ -685,8 +701,12 @@ function renderAnswerItemRows(items) {
   reviewModelAnswerList.querySelectorAll('.answer-item-row').forEach((el) => el.remove());
 
   items.forEach((text, index) => {
+    // 前の周で正解済みの項目は、行ごと出さない（済んでいることは問題文の横のヒントで分かる。
+    // 間違えた項目だけが並ぶので、そこに集中できる）。
+    if (currentAnswerItemLocked[index]) return;
+
     const row = document.createElement('div');
-    row.className = 'answer-item-row flex items-center justify-between gap-2 border-b border-slate-100 py-1 text-sm';
+    row.className = 'answer-item-row flex items-center justify-between gap-2 text-base leading-[32px] h-8';
 
     const label = document.createElement('span');
     label.className = 'flex-1';
@@ -725,6 +745,8 @@ function renderAnswerItemRows(items) {
       updateReviewNextButtonReadiness();
     });
 
+    refreshRowStyle();
+
     const btnGroup = document.createElement('div');
     btnGroup.className = 'flex items-center';
     btnGroup.appendChild(wrongBtn);
@@ -754,6 +776,12 @@ function finalizeReviewItem(isCorrect) {
   if (!isCorrect) {
     userAnswers[activeQuestion.id] = collectAnswerPages();
     wrongQuestions.push(activeQuestion);
+    // 複数答えの問題は、今回○だった項目を覚えておく（正解するまで判定し直させないため）
+    if (currentAnswerItems.length > 1) {
+      multiAnswerProgress[activeQuestion.id] = currentAnswerItemResults.slice();
+    }
+  } else {
+    delete multiAnswerProgress[activeQuestion.id];
   }
   goToNextReviewItem();
 }

@@ -20,14 +20,16 @@ body {
   opacity: 0;
 }
 
-/* 背景の罫線（ノートのような横線）。等間隔に繰り返すだけなので、
-   画面の大きさが変わっても JS で計算し直す必要がない。 */
+/* 背景の罫線（ノートのような横線）。間隔は文字の行の高さ（leading-[32px]）と揃えてあるので、
+   問題文・模範解答などの文字が実際の罫線ノートのように線の上に乗る。
+   画面の大きさが変わっても、間隔そのものは JS で計算し直す必要がない
+   （線をどこから始めるかの位置合わせだけ quiz.js の placePageDivider() が行う）。 */
 #ruled-lines {
   background-image: repeating-linear-gradient(
     to bottom,
     transparent,
-    transparent 39px,
-    #e2e8f0 39px,
-    #e2e8f0 40px
+    transparent 31px,
+    #e2e8f0 31px,
+    #e2e8f0 32px
   );
 }
