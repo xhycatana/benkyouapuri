@@ -53,3 +53,8 @@ btnPassphraseSave.addEventListener('click', submitPassphrase);
 passphraseInput.addEventListener('keydown', function (e) {
   if (e.key === 'Enter') submitPassphrase();
 });
+
+// 合言葉を持っていない人（初めて開いた人など）が、サンプルだけ試せるように閉じる
+btnPassphraseSkip.addEventListener('click', function () {
+  passphraseModal.classList.add('hidden');
+});

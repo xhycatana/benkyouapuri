@@ -286,6 +286,10 @@ btnUseSample.addEventListener('click', () => {
   startLearning(JSON.parse(JSON.stringify(sampleQuestionsJSON)));
 });
 
+btnUseSampleKanji.addEventListener('click', () => {
+  startLearning(JSON.parse(JSON.stringify(sampleKanjiJSON)));
+});
+
 btnShowHelp.addEventListener('click', () => switchPhase('help'));
 btnHelpBack.addEventListener('click', () => switchPhase('import'));
 
@@ -498,18 +502,21 @@ function placePageDivider() {
   ruledLines.style.top = ruledTop + 'px';
 
   const RULE_HEIGHT = 32;
+  let ruleOffset = 0;
   const textRef = currentPhase === 'test' ? testQuestion : reviewInfoBox.firstElementChild;
   if (textRef) {
     const localY = textRef.getBoundingClientRect().top - ruledTop;
-    const offset = ((localY % RULE_HEIGHT) + RULE_HEIGHT) % RULE_HEIGHT;
-    ruledLines.style.backgroundPositionY = offset + 'px';
+    ruleOffset = ((localY % RULE_HEIGHT) + RULE_HEIGHT) % RULE_HEIGHT;
+    ruledLines.style.backgroundPositionY = ruleOffset + 'px';
   }
 
   if (!showDivider) return;
 
-  // 区切り線は、罫線と同じ範囲（罫線の一番上から一番下まで）に伸ばす
-  pageDivider.style.top = ruledTop + 'px';
-  pageDivider.style.height = (window.innerHeight - ruledTop) + 'px';
+  // 区切り線は、一番上の罫線（ぴったり）から画面の一番下まで伸ばす。
+  // 罫線の帯の上端（ruledTop）から引くと、最初の罫線より上にはみ出して見えるため、ずらし分を足す。
+  const firstRuleTop = ruledTop + ruleOffset;
+  pageDivider.style.top = firstRuleTop + 'px';
+  pageDivider.style.height = (window.innerHeight - firstRuleTop) + 'px';
 }
 
 window.addEventListener('resize', placePageDivider);

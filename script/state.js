@@ -40,7 +40,9 @@ let lastReviewConfirmedPercent = -1, lastReviewCurrentPercent = -1;
 let lastTestGroupConfirmedPercent = -1, lastTestGroupCurrentPercent = -1;
 let lastReviewGroupConfirmedPercent = -1, lastReviewGroupCurrentPercent = -1;
 
-// サンプルデータ
+// サンプルデータ（動作確認用）。
+// わざと正解数・不正解数・寿命をバラバラに仕込んであり、忘却曲線による並べ替えが
+// 効いているかをその場で確認できるようにしてある。「覚える」体験のためのものではない。
 const sampleQuestionsJSON = [
   {
     id: "550e8400-e29b-41d4-a716-446655440001",
@@ -75,4 +77,43 @@ const sampleQuestionsJSON = [
     last_answered_at: new Date(Date.now() - 3600000 * 5).toISOString(),
     is_deleted: false
   }
+];
+
+// 「本当に覚えられるか」を試すためのサンプル（難読漢字の読み方）。
+// 上のサンプルと違い、成績はすべて未解答のまっさらな状態から始まる。
+function makeSampleKanjiEntry(id, question, answer, commentary) {
+  return {
+    id: "kanji-sample-" + id,
+    question: question,
+    answer: answer,
+    commentary: commentary,
+    correct_count: 0,
+    incorrect_count: 0,
+    lifespan: 1.0,
+    last_answered_at: null,
+    is_deleted: false
+  };
+}
+
+const sampleKanjiJSON = [
+  makeSampleKanjiEntry("01", "海豚", "いるか", "哺乳類。水中で暮らす。"),
+  makeSampleKanjiEntry("02", "蝙蝠", "こうもり", "空を飛ぶ唯一の哺乳類。"),
+  makeSampleKanjiEntry("03", "蜥蜴", "とかげ", "爬虫類。尻尾を切って逃げることがある。"),
+  makeSampleKanjiEntry("04", "螺", "にな", "巻き貝の一種。"),
+  makeSampleKanjiEntry("05", "雪崩", "なだれ", "積もった雪が崩れ落ちる現象。"),
+  makeSampleKanjiEntry("06", "五月雨", "さみだれ", "陰暦五月頃に降り続く長雨。梅雨のこと。"),
+  makeSampleKanjiEntry("07", "十六夜", "いざよい", "満月の翌日の夜の月。"),
+  makeSampleKanjiEntry("08", "老舗", "しにせ", "代々続く、古くからの店。"),
+  makeSampleKanjiEntry("09", "為替", "かわせ", "現金を使わずに送金・決済する仕組み。"),
+  makeSampleKanjiEntry("10", "石榴", "ざくろ", "赤い実の中に種が多く詰まった果実。"),
+  makeSampleKanjiEntry("11", "山葵", "わさび", "刺身などに添える、辛味のある薬味。"),
+  makeSampleKanjiEntry("12", "心太", "ところてん", "テングサを煮て固めた食品。"),
+  makeSampleKanjiEntry("13", "海月", "くらげ", "傘のような体を持つ、刺胞動物。"),
+  makeSampleKanjiEntry("14", "団扇", "うちわ", "あおいで風を起こす道具。"),
+  makeSampleKanjiEntry("15", "木耳", "きくらげ", "きのこの一種。中華料理でよく使われる。"),
+  makeSampleKanjiEntry("16", "蝸牛", "かたつむり", "殻を背負った陸生の巻き貝。"),
+  makeSampleKanjiEntry("17", "蟷螂", "かまきり", "鎌のような前足を持つ昆虫。"),
+  makeSampleKanjiEntry("18", "百足", "むかで", "多数の足を持つ節足動物。"),
+  makeSampleKanjiEntry("19", "無花果", "いちじく", "花を咲かせずに実をつけるように見える果実。"),
+  makeSampleKanjiEntry("20", "神楽", "かぐら", "神に奉納する歌舞。")
 ];

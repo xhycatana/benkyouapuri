@@ -39,7 +39,7 @@ window.onload = function() {
   applyMemorySettingsToUI();
   applyDisplaySettingsToUI();
   watchZoom();
-  loadLibrary();
+  loadLibrary(true);   // 起動直後は、合言葉が無くても勝手に入力欄を出さない
   loadHistoryPending();
   loadStudyTimePending();
 };

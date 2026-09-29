@@ -29,10 +29,27 @@ function setTreeMessage(text, isError) {
   libraryTree.appendChild(p);
 }
 
-async function loadLibrary() {
+// 合言葉が無いときの案内。ボタンを押すまでは合言葉の入力欄を勝手に出さない
+// （初めて開いた人が、合言葉を持っていなくても「サンプル」だけは試せるように）。
+function setTreeMessageNoPassphrase() {
+  libraryTree.innerHTML = '';
+  const p = document.createElement('p');
+  p.className = 'text-xs text-slate-400';
+  p.textContent = '自分の問題集を使うには合言葉が必要です。';
+  const btn = document.createElement('button');
+  btn.className = 'mt-1 text-xs text-black underline hover:no-underline focus:outline-none';
+  btn.textContent = '合言葉を入力する';
+  btn.addEventListener('click', function () { askPassphrase(''); });
+  libraryTree.appendChild(p);
+  libraryTree.appendChild(btn);
+}
+
+// silent が true のときは、起動直後の自動読み込みなので、入力欄を勝手に出さない。
+// 「再読み込み」を押すなど、本人が明示的に操作したときだけ自動で聞く。
+async function loadLibrary(silent) {
   if (!getPassphrase()) {
-    setTreeMessage('合言葉を入力してください。');
-    askPassphrase('');
+    setTreeMessageNoPassphrase();
+    if (!silent) askPassphrase('');
     return;
   }
   setTreeMessage('読み込み中…');
@@ -318,4 +335,4 @@ async function deleteSet(set) {
 }
 
 btnStartSelected.addEventListener('click', startFromSelection);
-btnLibraryReload.addEventListener('click', loadLibrary);
+btnLibraryReload.addEventListener('click', function () { loadLibrary(); });

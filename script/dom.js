@@ -37,6 +37,7 @@ const passphraseModal = document.getElementById('passphrase-modal');
 const passphraseInput = document.getElementById('passphrase-input');
 const passphraseError = document.getElementById('passphrase-error');
 const btnPassphraseSave = document.getElementById('btn-passphrase-save');
+const btnPassphraseSkip = document.getElementById('btn-passphrase-skip');
 const leftControlsContainer = document.getElementById('left-controls-container');
 
 const dropZone = document.getElementById('drop-zone');
@@ -50,6 +51,7 @@ const questionFontVal = document.getElementById('question-font-val');
 const checkRuledLines = document.getElementById('check-ruled-lines');
 
 const btnUseSample = document.getElementById('btn-use-sample');
+const btnUseSampleKanji = document.getElementById('btn-use-sample-kanji');
 
 const btnShowHelp = document.getElementById('btn-show-help');
 const btnHelpBack = document.getElementById('btn-help-back');
