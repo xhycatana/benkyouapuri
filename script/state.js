@@ -21,6 +21,9 @@ let currentAnswerItemLocked = [];   // 前の周で正解済みなので、今�
 // 複数答えの問題が間違って再出題されたとき、前の周で○だった項目を覚えておく（問題IDごと）。
 // 再挑戦のたびに全部を判定し直させないための記録。true の項目だけ持ち、消えたら未判定として扱う。
 let multiAnswerProgress = {};
+// 丸つけ中、直前の1問ぶんの採点を取り消すための記録（一問前にだけ戻れる。押し間違え対策）。
+// その回の丸つけが始まるたび（initReviewPhase）に null に戻す＝回をまたいでは戻れない。
+let lastReviewAction = null;
 let currentPhase = 'import';   // 'import', 'upload', 'help', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;

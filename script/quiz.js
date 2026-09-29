@@ -492,11 +492,12 @@ const RULE_HEIGHT = 32;
 // 罫線を1本ずつ、実際の要素として置く。CSSの背景パターンの位相合わせ（position の
 // ずらし量）は計算を間違えやすく、実際の見た目とずれる原因になっていたため、
 // 「文字の1行目の位置」から単純な足し算だけで済むこの方式に変えた。
-// phase: 罫線を置き始める位置（ruledLines 自身の一番上からの距離、0以上）
+// phase: 文字の1行目の位置（ruledLines 自身の一番上からの距離、0以上）。
+// 1行目の真上（進捗バーのすぐ下）に線を置くと窮屈なので、1本目は1行目の下（phase+間隔）から始める。
 function layoutRuledLines(phase) {
   ruledLines.innerHTML = '';
   const height = window.innerHeight - ruledLines.getBoundingClientRect().top;
-  for (let y = phase; y < height; y += RULE_HEIGHT) {
+  for (let y = phase + RULE_HEIGHT; y < height; y += RULE_HEIGHT) {
     const line = document.createElement('div');
     line.className = 'ruled-line';
     line.style.top = y + 'px';
@@ -529,8 +530,9 @@ function placePageDivider() {
 
   if (!showDivider) return;
 
-  // 区切り線は、1本目の罫線（ぴったり）から画面の一番下まで伸ばす
-  const firstRuleTop = ruledTop + phase;
+  // 区切り線は、1本目の罫線（ぴったり。文字の1行目の真上の線は無いので、その次の線）から
+  // 画面の一番下まで伸ばす
+  const firstRuleTop = ruledTop + phase + RULE_HEIGHT;
   pageDivider.style.top = firstRuleTop + 'px';
   pageDivider.style.height = (window.innerHeight - firstRuleTop) + 'px';
 }
@@ -666,6 +668,7 @@ btnSubmitTest.addEventListener('click', () => {
 function initReviewPhase() {
   currentIndex = 0;
   wrongQuestions = [];
+  lastReviewAction = null;   // 前の回の採点までは戻れないようにする
   showReviewItem();
 }
 
@@ -712,6 +715,7 @@ function showReviewItem() {
 
   const hasDrawn = userHasDrawn[activeQuestion.id] === true;
   setReviewCorrectButtonsEnabled(hasDrawn);
+  btnReviewUndo.disabled = !lastReviewAction;
   placePageDivider();   // 解説の有無で問題文の欄の高さが変わった後に置き直す
 }
 
@@ -803,6 +807,24 @@ function updateReviewNextButtonReadiness() {
 function finalizeReviewItem(isCorrect) {
   const activeQuestion = currentList[currentIndex];
   if (!activeQuestion) return;
+
+  // 押し間違えたときに一問前へ戻れるよう、書き換える前の状態を控えておく
+  lastReviewAction = {
+    index: currentIndex,
+    questionId: activeQuestion.id,
+    question: activeQuestion,
+    prevSrs: {
+      correct_count: activeQuestion.correct_count,
+      incorrect_count: activeQuestion.incorrect_count,
+      lifespan: activeQuestion.lifespan,
+      last_answered_at: activeQuestion.last_answered_at
+    },
+    prevAnsweredThisSession: !!answeredThisSession[activeQuestion.id],
+    prevMultiAnswerProgress: multiAnswerProgress[activeQuestion.id] ? multiAnswerProgress[activeQuestion.id].slice() : undefined,
+    prevHistoryLength: historyPending.length,
+    prevWrongQuestionsLength: wrongQuestions.length
+  };
+
   updateSrsMetrics(activeQuestion, isCorrect);
   if (!isCorrect) {
     userAnswers[activeQuestion.id] = collectAnswerPages();
@@ -816,6 +838,43 @@ function finalizeReviewItem(isCorrect) {
   }
   goToNextReviewItem();
 }
+
+// 直前の1問の採点を取り消し、その問題をもう一度丸つけし直す（一問前にだけ戻れる）。
+function undoLastReviewItem() {
+  if (isTransitioning || !lastReviewAction) return;
+  const a = lastReviewAction;
+  lastReviewAction = null;
+
+  Object.assign(a.question, a.prevSrs);
+  if (a.prevAnsweredThisSession) {
+    answeredThisSession[a.questionId] = true;
+  } else {
+    delete answeredThisSession[a.questionId];
+  }
+  recordProgress(a.question);   // 戻した値で progressStats・端末の控えを上書きする
+
+  // 履歴ログに記録済みなら、まだ送信していない分だけ取り消す
+  if (historyPending.length > a.prevHistoryLength) {
+    historyPending.length = a.prevHistoryLength;
+    writeLocalHistory();
+    historyDirty = historyPending.length > 0;
+  }
+
+  if (a.prevMultiAnswerProgress) {
+    multiAnswerProgress[a.questionId] = a.prevMultiAnswerProgress;
+  } else {
+    delete multiAnswerProgress[a.questionId];
+  }
+
+  if (wrongQuestions.length > a.prevWrongQuestionsLength) {
+    wrongQuestions.length = a.prevWrongQuestionsLength;
+  }
+
+  currentIndex = a.index;
+  showReviewItem();
+}
+
+btnReviewUndo.addEventListener('click', undoLastReviewItem);
 
 btnSelfCorrect.addEventListener('click', () => {
   if (isTransitioning) return;

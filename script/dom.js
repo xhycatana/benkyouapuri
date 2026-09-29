@@ -59,6 +59,15 @@ const penTestPad = document.getElementById('pen-test-pad');
 const penTestStats = document.getElementById('pen-test-stats');
 const btnPenTestClear = document.getElementById('btn-pen-test-clear');
 
+const fcChart = document.getElementById('fc-chart');
+const fcEaseInput = document.getElementById('fc-ease');
+const fcEaseOut = document.getElementById('fc-ease-out');
+const fcLapseInput = document.getElementById('fc-lapse');
+const fcLapseOut = document.getElementById('fc-lapse-out');
+const fcToolCorrect = document.getElementById('fc-tool-correct');
+const fcToolIncorrect = document.getElementById('fc-tool-incorrect');
+const fcReset = document.getElementById('fc-reset');
+
 const btnShowStudyTime = document.getElementById('btn-show-study-time');
 const btnStudyTimeBack = document.getElementById('btn-study-time-back');
 const studyTimeCumulative = document.getElementById('study-time-cumulative');
@@ -119,6 +128,7 @@ const btnSelfCorrect = document.getElementById('btn-self-correct');
 const btnSelfWrong = document.getElementById('btn-self-wrong');
 const btnReviewNext = document.getElementById('btn-review-next');
 const btnClearReviewCanvas = document.getElementById('btn-clear-review-canvas');
+const btnReviewUndo = document.getElementById('btn-review-undo');
 
 const sizePickerButtons = document.querySelectorAll('.size-picker-btn');
 const colorPickerButtons = document.querySelectorAll('.color-picker-btn');

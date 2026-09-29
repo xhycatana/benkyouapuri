@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.32.4">
+  <link rel="stylesheet" href="style.css?v=6.35.2">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -176,7 +176,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.32.4</span>
+              <span class="cursor-default select-none font-mono">v6.35.2</span>
             </div>
           </div>
         </section>
@@ -382,7 +382,13 @@
 
             <div id="review-control-container" class="p-2 md:p-4 mt-auto pointer-events-none flex justify-center">
               <div class="flex justify-center space-x-4 pointer-events-none">
-                
+
+                <button id="btn-review-undo" class="pointer-events-auto w-9 md:w-10 h-9 md:h-10 flex items-center justify-center bg-white hover:bg-slate-50 text-black border border-black transition-colors shadow-sm focus:outline-none rounded-none disabled:opacity-30" title="一問前に戻る" disabled>
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                  </svg>
+                </button>
+
                 <div class="pointer-events-auto h-9 md:h-10 flex items-center bg-white border border-black shadow-sm">
                   <button type="button" class="page-prev-btn w-9 md:w-10 h-full flex items-center justify-center hover:bg-slate-50 focus:outline-none" title="前のページ">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -457,6 +463,32 @@
             <p class="font-mono text-[10px] bg-slate-50 border border-slate-200 p-2">確率 = exp( −経過日数 ÷ 記憶の寿命 )</p>
             <p><strong>この確率が低い問題から順に出題されます。</strong>正解すると寿命が延びて出題が先延ばしになり、間違えると寿命が縮んで早く戻ってきます。一度も解いていない問題は確率0として最優先で出ます（未解答の問題どうしの中からは無作為に選ばれます）。</p>
             <p><strong>「出題する上限」</strong>を決めておくと、優先度の高い順にその数だけ出題されます。<strong>優先度順に選ぶので、途中でやめてもそこまでが最善</strong>になります。空いた時間の長さに合わせて、5問・20問のように決められます。</p>
+
+            <div class="border border-black bg-white p-3 space-y-3">
+              <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div>
+                  <div class="flex justify-between text-[10px] text-slate-500">
+                    <span>正解したときの伸び</span><span id="fc-ease-out" class="font-bold text-blue-600">2.5 倍</span>
+                  </div>
+                  <input type="range" id="fc-ease" min="1.3" max="4" step="0.1" value="2.5" class="w-full accent-black">
+                </div>
+                <div>
+                  <div class="flex justify-between text-[10px] text-slate-500">
+                    <span>不正解で残す割合</span><span id="fc-lapse-out" class="font-bold text-red-600">20 %</span>
+                  </div>
+                  <input type="range" id="fc-lapse" min="0" max="60" step="1" value="20" class="w-full accent-black">
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <button id="fc-tool-correct" type="button" class="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-50 focus:outline-none">⭕ 正解を置く</button>
+                <button id="fc-tool-incorrect" type="button" class="px-2 py-1 text-[10px] font-bold bg-white hover:bg-slate-50 focus:outline-none">❌ 不正解を置く</button>
+                <button id="fc-reset" type="button" class="ml-auto px-2 py-1 text-[10px] font-bold bg-white border border-slate-300 hover:bg-slate-50 focus:outline-none">リセット</button>
+              </div>
+
+              <svg id="fc-chart" viewBox="0 0 600 220" class="w-full block" style="touch-action:none;"></svg>
+              <p class="text-[10px] text-slate-400">グラフの空いた場所をクリックで追加、印をドラッグで移動できます。やり直したいときはリセットしてください。</p>
+            </div>
           </div>
 
           <div class="bg-white border border-black p-4 space-y-3 text-xs text-slate-700 leading-relaxed">
@@ -521,7 +553,6 @@
             <h3 class="text-sm font-bold text-slate-900 border-b border-black pb-2 mb-2">5. 歯車の設定（アルゴリズム設定）</h3>
             <p><strong>正解したときの伸び</strong> … 正解すると記憶の寿命がこの倍率で延びます。</p>
             <p><strong>間違えたときに残す割合</strong> … よく覚えていた問題ほど、間違えても間隔を長く保ちます。</p>
-            <p><strong>間違えたときの最短間隔</strong> … 寿命がこれより短くなることはありません。</p>
             <p><strong>解き直しで正解したときの伸び</strong> … 間違えた直後にその場で解き直して正解したときだけ、寿命をこの倍率で少しだけ伸ばします。</p>
             <p><strong>背景の罫線</strong> … 出題・丸つけ中の背景に出すノートのような横線を、ON/OFFできます。</p>
           </div>
@@ -585,14 +616,6 @@
 
         <div>
           <label class="block font-bold text-slate-700 mb-1">
-            間違えたときの最短間隔: <span id="fail-val" class="text-red-600 font-bold">30 分</span>
-          </label>
-          <input type="range" id="fail-input" min="5" max="240" step="5" value="30" class="w-full accent-black">
-          <p class="text-[10px] text-slate-400 mt-0.5">これより短くはなりません</p>
-        </div>
-
-        <div>
-          <label class="block font-bold text-slate-700 mb-1">
             解き直しで正解したときの伸び: <span id="retry-boost-val" class="text-blue-600 font-bold">1.2 倍</span>
           </label>
           <input type="range" id="retry-boost-input" min="1.0" max="2.0" step="0.1" value="1.2" class="w-full accent-black">
@@ -648,17 +671,17 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.32.4"></script>
-  <script src="script/dom.js?v=6.32.4"></script>
-  <script src="script/util.js?v=6.32.4"></script>
-  <script src="script/memory.js?v=6.32.4"></script>
-  <script src="script/api.js?v=6.32.4"></script>
-  <script src="script/progress.js?v=6.32.4"></script>
-  <script src="script/studytime.js?v=6.32.4"></script>
-  <script src="script/canvas.js?v=6.32.4"></script>
-  <script src="script/quiz.js?v=6.32.4"></script>
-  <script src="script/library.js?v=6.32.4"></script>
-  <script src="script/upload.js?v=6.32.4"></script>
-  <script src="script/app.js?v=6.32.4"></script>
+  <script src="script/state.js?v=6.35.2"></script>
+  <script src="script/dom.js?v=6.35.2"></script>
+  <script src="script/util.js?v=6.35.2"></script>
+  <script src="script/memory.js?v=6.35.2"></script>
+  <script src="script/api.js?v=6.35.2"></script>
+  <script src="script/progress.js?v=6.35.2"></script>
+  <script src="script/studytime.js?v=6.35.2"></script>
+  <script src="script/canvas.js?v=6.35.2"></script>
+  <script src="script/quiz.js?v=6.35.2"></script>
+  <script src="script/library.js?v=6.35.2"></script>
+  <script src="script/upload.js?v=6.35.2"></script>
+  <script src="script/app.js?v=6.35.2"></script>
 </body>
 </html>
