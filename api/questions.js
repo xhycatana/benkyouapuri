@@ -9,6 +9,9 @@
 //   GET  /api/questions?kind=studytime&month=YYYY-MM -> 勉強時間の記録（月ごと）
 //   GET  /api/questions?kind=studytimetotal -> 勉強時間の累計（全期間）
 //   POST /api/questions                -> 問題集を保存する
+//   POST /api/questions {kind:'order'}          -> 一覧の並び順を保存する
+//   POST /api/questions {kind:'meta'}           -> 問題集の名前・タグ・逆向き許可だけを変える
+//   POST /api/questions {kind:'progress-reset'} -> 指定した問題の成績を消す
 //   DELETE /api/questions?path=…       -> 問題集を削除する
 //
 // いずれも x-passphrase ヘッダーでの合言葉が必要。
@@ -112,8 +115,8 @@ async function readIndex() {
 }
 
 async function writeIndex(index) {
+  // 並び順は「追加した順」が既定で、管理画面で入れ替えた順もそのまま保つ。ここでは並べ替えない。
   index.updated_at = new Date().toISOString();
-  index.sets.sort(function (a, b) { return a.path.localeCompare(b.path, 'ja'); });
   await writeFile(INDEX_FILE, JSON.stringify(index, null, 2), '一覧を更新');
 }
 
@@ -158,7 +161,16 @@ async function rebuildIndex() {
     loaded.forEach(function (x) { if (x) sets.push(x); });
   }
 
-  const index = { updated_at: null, sets: sets };
+  // 作り直しで並び順が壊れないよう、前の一覧にあった問題集は前の順のまま先に並べ、新しく見つかったものを後ろに足す
+  const before = await readIndex();
+  const rank = {};
+  before.sets.forEach(function (s, i) { rank[s.path] = i; });
+  const known = sets.filter(function (s) { return rank[s.path] !== undefined; })
+    .sort(function (a, b) { return rank[a.path] - rank[b.path]; });
+  const fresh = sets.filter(function (s) { return rank[s.path] === undefined; })
+    .sort(function (a, b) { return a.path.localeCompare(b.path, 'ja'); });
+
+  const index = { updated_at: null, sets: known.concat(fresh) };
   await writeIndex(index);
   return index;
 }
@@ -200,6 +212,23 @@ function mergeStats(base, incoming) {
     if (tb >= ta) base[id] = entry;
   });
   return base;
+}
+
+// 指定した問題の成績を消す。逆向き出題の成績（IDの末尾に :swap が付く）も一緒に消す。
+function removeStats(stats, ids) {
+  let removed = 0;
+  ids.forEach(function (id) {
+    [id, id + ':swap'].forEach(function (key) {
+      if (Object.prototype.hasOwnProperty.call(stats, key)) { delete stats[key]; removed++; }
+    });
+  });
+  return removed;
+}
+
+function cleanIds(ids) {
+  return (Array.isArray(ids) ? ids : []).filter(function (x) {
+    return typeof x === 'string' && x.length > 0;
+  });
 }
 
 // --- 全履歴ログ（1回ごと。忘却曲線のパラメータ学習用の材料） ----------------
@@ -397,6 +426,78 @@ module.exports = async (req, res) => {
         return;
       }
 
+      // 一覧の並び順の保存。渡された順に並べ、渡されなかった問題集は元の順のまま後ろに付ける
+      if (body.kind === 'order') {
+        const wanted = Array.isArray(body.paths) ? body.paths : [];
+        const index = await readIndex();
+        const byPath = {};
+        index.sets.forEach(function (s) { byPath[s.path] = s; });
+        const sorted = [];
+        wanted.forEach(function (p) {
+          if (typeof p === 'string' && byPath[p]) { sorted.push(byPath[p]); delete byPath[p]; }
+        });
+        index.sets.forEach(function (s) { if (byPath[s.path]) sorted.push(s); });
+        index.sets = sorted;
+        await writeIndex(index);
+        res.status(200).json({ saved: true, count: sorted.length });
+        return;
+      }
+
+      // 問題集の名前・タグ・逆向き許可だけを変える（問題の中身には触れない）
+      if (body.kind === 'meta') {
+        const path = cleanPath(body.path);
+        if (!path) {
+          res.status(400).json({ error: '問題集の指定が正しくありません。' });
+          return;
+        }
+        const file = SETS_DIR + '/' + path + '.json';
+        const f = await readFile(file);
+        if (!f) {
+          res.status(404).json({ error: '見つかりません: ' + path });
+          return;
+        }
+        const set = JSON.parse(f.text);
+        if (typeof body.title === 'string') {
+          const title = body.title.trim();
+          if (!title) {
+            res.status(400).json({ error: '名前を空にはできません。' });
+            return;
+          }
+          set.title = title;
+        }
+        if (Array.isArray(body.tags)) {
+          set.tags = body.tags.map(function (x) { return String(x).trim(); }).filter(Boolean);
+        }
+        if (typeof body.allowSwap === 'boolean') set.allowSwap = body.allowSwap;
+        set.updated_at = new Date().toISOString();
+        await writeFile(file, JSON.stringify(set, null, 2), '設定を変更: ' + path);
+
+        const index = await readIndex();
+        const at = index.sets.findIndex(function (s) { return s.path === path; });
+        if (at >= 0) {
+          index.sets[at].title = set.title;
+          index.sets[at].tags = Array.isArray(set.tags) ? set.tags : [];
+          index.sets[at].allowSwap = !!set.allowSwap;
+          index.sets[at].updated_at = set.updated_at;
+          await writeIndex(index);
+        }
+        res.status(200).json({ saved: true, path: path, title: set.title });
+        return;
+      }
+
+      // 指定した問題の成績を消す
+      if (body.kind === 'progress-reset') {
+        const ids = cleanIds(body.ids);
+        const current = await readProgress();
+        const removed = removeStats(current.stats || {}, ids);
+        if (removed > 0) {
+          const saved = { updated_at: new Date().toISOString(), stats: current.stats };
+          await writeFile(PROGRESS_FILE, JSON.stringify(saved, null, 2), '成績をリセット（' + removed + '件）');
+        }
+        res.status(200).json({ saved: true, removed: removed });
+        return;
+      }
+
       // 解答履歴の保存
       if (body.kind === 'progress') {
         const current = await readProgress();
@@ -508,6 +609,18 @@ module.exports = async (req, res) => {
       await writeFile(file, JSON.stringify(set, null, 2),
                       (existed ? '更新: ' : '追加: ') + path + '（' + questions.length + '問）');
 
+      // 書き換えと同時に成績を消す指定があるときだけ消す（既定は、IDが同じなら成績を引き継ぐ）
+      const resetIds = cleanIds(body.resetIds);
+      let resetCount = 0;
+      if (resetIds.length > 0) {
+        const current = await readProgress();
+        resetCount = removeStats(current.stats || {}, resetIds);
+        if (resetCount > 0) {
+          const savedProgress = { updated_at: new Date().toISOString(), stats: current.stats };
+          await writeFile(PROGRESS_FILE, JSON.stringify(savedProgress, null, 2), '成績をリセット（' + resetCount + '件）');
+        }
+      }
+
       // 一覧にも反映する
       const index = await readIndex();
       const entry = {
@@ -518,7 +631,7 @@ module.exports = async (req, res) => {
       if (at >= 0) index.sets[at] = entry; else index.sets.push(entry);
       await writeIndex(index);
 
-      res.status(200).json({ saved: true, path: path, count: questions.length, updated: existed });
+      res.status(200).json({ saved: true, path: path, count: questions.length, updated: existed, reset: resetCount });
       return;
     }
 

@@ -24,7 +24,7 @@ let multiAnswerProgress = {};
 // 丸つけ中、直前の1問ぶんの採点を取り消すための記録（一問前にだけ戻れる。押し間違え対策）。
 // その回の丸つけが始まるたび（initReviewPhase）に null に戻す＝回をまたいでは戻れない。
 let lastReviewAction = null;
-let currentPhase = 'import';   // 'import', 'upload', 'help', 'test', 'review'
+let currentPhase = 'import';   // 'import', 'upload', 'manage', 'edit', 'help', 'studytime', 'test', 'review'
 let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;
 let isBlanked = false;     // 切り替えガード

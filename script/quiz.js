@@ -19,7 +19,8 @@ function switchPhase(newPhase) {
   // ホーム画面と追加画面は内容が縦に伸びるのでスクロールさせる。
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
   // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
-  const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help' || newPhase === 'studytime');
+  const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help' || newPhase === 'studytime' ||
+                      newPhase === 'manage' || newPhase === 'edit');
   phaseContainer.classList.toggle('overflow-y-auto', scrollable);
   phaseContainer.classList.toggle('pointer-events-auto', scrollable);
   phaseContainer.classList.toggle('justify-center', !scrollable);
@@ -35,6 +36,8 @@ function switchPhase(newPhase) {
   phaseImport.classList.add('hidden');
   phaseUpload.classList.add('hidden');
   phaseHelp.classList.add('hidden');
+  phaseManage.classList.add('hidden');
+  phaseEdit.classList.add('hidden');
   phaseStudyTime.classList.add('hidden');
   phaseTest.classList.add('hidden');
   phaseReview.classList.add('hidden');
@@ -50,6 +53,10 @@ function switchPhase(newPhase) {
     saveStudyTime();
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
+    leftControlsContainer.classList.add('hidden');
+    globalCanvas.clear();
+  } else if (newPhase === 'manage' || newPhase === 'edit') {
+    (newPhase === 'manage' ? phaseManage : phaseEdit).classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
   } else if (newPhase === 'help') {
@@ -193,6 +200,7 @@ function startLearning(problemData) {
     const st = progressStats[id] || {};
     return {
       id: id,
+      setPath: item.setPath || null,
       question: item.question,
       answer: item.answer,
       commentary: item.commentary || '',
@@ -679,6 +687,7 @@ function showReviewItem() {
 
   reviewQuestion.innerText = activeQuestion.question;
   reviewAnswerCountHint.textContent = answerCountHintText(activeQuestion);
+  reviewProbIndicator.innerText = `記憶予測確率: ${(calculateProbability(activeQuestion) * 100).toFixed(1)}%`;
 
   // 答えが「／」で複数に分かれている問題（例：英単語の意味を複数答える）は、
   // 1つずつ判定できるように、通常の一括表示とは別の見た目に切り替える。

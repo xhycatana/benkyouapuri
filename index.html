@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.35.2">
+  <link rel="stylesheet" href="style.css?v=6.37.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -128,6 +128,7 @@
               <span class="text-sm font-bold text-slate-700">問題集から選ぶ</span>
               <div class="flex items-center space-x-3">
                 <button id="btn-library-reload" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
+                <button id="btn-open-manage" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">管理</button>
                 <button id="btn-open-upload" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
               </div>
             </div>
@@ -176,7 +177,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.35.2</span>
+              <span class="cursor-default select-none font-mono">v6.37.0</span>
             </div>
           </div>
         </section>
@@ -249,6 +250,79 @@
           <div id="upload-message" class="text-xs"></div>
         </section>
 
+        <!-- 問題集の管理 -->
+        <section id="phase-manage" class="hidden space-y-4 pointer-events-auto w-full mx-auto my-auto max-w-lg">
+          <div class="flex items-center space-x-3">
+            <button id="btn-manage-back" class="w-10 h-10 shrink-0 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="戻る">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 class="text-lg font-bold text-slate-800">問題集の管理</h2>
+          </div>
+          <div class="bg-white border border-black p-4 space-y-2">
+            <p class="text-[10px] text-slate-400">▲▼で、同じ階層の中の順番を入れ替えます（新しく追加した問題集は、いちばん下に並びます）。名前は、書き換えるとその場で保存されます。✎で問題や見出しを編集できます。</p>
+            <div id="manage-tree" class="text-sm"></div>
+          </div>
+          <div id="manage-message" class="text-xs"></div>
+        </section>
+
+        <!-- 問題集の編集 -->
+        <section id="phase-edit" class="hidden space-y-4 pointer-events-auto w-full mx-auto my-auto max-w-2xl">
+          <div class="flex items-center space-x-3">
+            <button id="btn-edit-back" class="w-10 h-10 shrink-0 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="戻る">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <div class="min-w-0">
+              <h2 class="text-lg font-bold text-slate-800">問題集を編集</h2>
+              <div id="edit-subtitle" class="text-[10px] text-slate-400 truncate"></div>
+            </div>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-3 text-xs">
+            <label class="block">
+              <span class="font-bold text-slate-700">名前</span>
+              <input id="edit-title" type="text" class="mt-1 w-full p-2 border border-black focus:outline-none">
+            </label>
+            <label class="block">
+              <span class="font-bold text-slate-700">タグ</span>
+              <input id="edit-tags" type="text" placeholder="世界史, 近代, 革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
+              <span class="text-[10px] text-slate-400">カンマ区切り</span>
+            </label>
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-700">問題と答えを逆にすることを許可する</span>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
+                <input type="checkbox" id="edit-allow-swap" class="sr-only peer">
+                <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
+              </label>
+            </div>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-2 text-xs">
+            <span class="font-bold text-slate-700">見出し</span>
+            <p class="text-[10px] text-slate-400">書き換えると、その見出しの下にあるすべての問題に反映されます（名前を同じにすると1つにまとまります）。穴埋めの全文も、見出しとして並びます。</p>
+            <div id="edit-headings" class="max-h-64 overflow-y-auto"></div>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-2 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-700">問題</span>
+              <span id="edit-count" class="text-[10px] text-slate-400"></span>
+            </div>
+            <p class="text-[10px] text-slate-400">問題文や答えを書き換えても、成績（正答率）は変わりません。リセットしたい問題だけ「成績リセット」を押してください。どちらも「保存する」を押すまで反映されません。</p>
+            <input id="edit-search" type="text" placeholder="問題・答え・見出しで絞り込む" class="w-full p-2 border border-slate-300 focus:outline-none focus:border-black">
+            <div id="edit-list"></div>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <button id="btn-edit-reset-all" class="px-3 py-2 border border-slate-300 text-[10px] text-slate-500 hover:border-red-600 hover:text-red-600 focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>この問題集の成績をすべてリセット</button>
+            <button id="btn-edit-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>保存する</button>
+          </div>
+          <div id="edit-message" class="text-xs"></div>
+        </section>
+
         <!-- 勉強時間 -->
         <section id="phase-study-time" class="hidden space-y-4 pointer-events-auto w-full mx-auto my-auto max-w-3xl">
           <div class="flex items-center space-x-3">
@@ -302,7 +376,7 @@
             </div>
             <div class="flex justify-between items-center text-xs text-slate-400 px-2">
               <span><span id="test-progress-text">問題 0 / 0</span><span id="test-answer-count-hint" class="ml-2"></span></span>
-              <span id="test-prob-indicator" class="font-mono text-[10px]">記憶予測確率: - %</span>
+              <span class="flex items-center"><span id="test-prob-indicator" class="font-mono text-[10px]">記憶予測確率: - %</span><button id="btn-edit-question-test" class="pointer-events-auto ml-2 w-7 h-7 shrink-0 border border-slate-300 text-sm text-slate-500 hover:border-black hover:text-black focus:outline-none" title="この問題を書き換える">✎</button></span>
             </div>
           </div>
 
@@ -357,6 +431,7 @@
             </div>
             <div class="flex justify-between items-center text-xs text-slate-400 px-2">
               <span><span id="review-progress-text">丸付け 0 / 0</span><span id="review-answer-count-hint" class="ml-2"></span></span>
+              <span class="flex items-center"><span id="review-prob-indicator" class="font-mono text-[10px]">記憶予測確率: - %</span><button id="btn-edit-question-review" class="pointer-events-auto ml-2 w-7 h-7 shrink-0 border border-slate-300 text-sm text-slate-500 hover:border-black hover:text-black focus:outline-none" title="この問題を書き換える">✎</button></span>
             </div>
           </div>
 
@@ -587,6 +662,33 @@
 
   </div>
 
+  <!-- 出題中に、いまの問題だけを書き換えるモーダル -->
+  <div id="question-edit-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+    <div class="bg-white border border-black w-full max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+      <h3 class="text-base font-bold text-slate-900 border-b border-black pb-2">この問題を書き換える</h3>
+      <div id="qedit-headings" class="text-[10px] text-slate-400 break-words"></div>
+      <label class="block text-xs">
+        <span class="font-bold text-slate-700">問題文</span>
+        <textarea id="qedit-question" rows="3" class="mt-1 w-full p-2 border border-black text-sm focus:outline-none"></textarea>
+      </label>
+      <label class="block text-xs">
+        <span class="font-bold text-slate-700">答え</span>
+        <input id="qedit-answer" type="text" class="mt-1 w-full p-2 border border-black text-sm focus:outline-none">
+        <span id="qedit-answer-hint" class="hidden text-[10px] text-slate-400">答えを変えると、複数の答えの正解済みの記録（再出題のとき）は消えます</span>
+      </label>
+      <label class="block text-xs">
+        <span class="font-bold text-slate-700">解説</span>
+        <input id="qedit-commentary" type="text" class="mt-1 w-full p-2 border border-black text-sm focus:outline-none">
+      </label>
+      <p class="text-[10px] text-slate-400">成績（正答率）は変わりません。見出しの変更や、成績のリセットは、ホーム画面の「管理」から行えます。</p>
+      <div id="qedit-message" class="text-xs"></div>
+      <div class="flex justify-end space-x-3">
+        <button id="btn-qedit-cancel" class="px-4 py-2 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">やめる</button>
+        <button id="btn-qedit-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30">保存する</button>
+      </div>
+    </div>
+  </div>
+
   <!-- アルゴリズムパラメーター設定モーダル -->
   <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
     <div class="bg-white border border-black w-full max-w-md p-6 space-y-4 max-h-[85vh] overflow-y-auto">
@@ -671,17 +773,18 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.35.2"></script>
-  <script src="script/dom.js?v=6.35.2"></script>
-  <script src="script/util.js?v=6.35.2"></script>
-  <script src="script/memory.js?v=6.35.2"></script>
-  <script src="script/api.js?v=6.35.2"></script>
-  <script src="script/progress.js?v=6.35.2"></script>
-  <script src="script/studytime.js?v=6.35.2"></script>
-  <script src="script/canvas.js?v=6.35.2"></script>
-  <script src="script/quiz.js?v=6.35.2"></script>
-  <script src="script/library.js?v=6.35.2"></script>
-  <script src="script/upload.js?v=6.35.2"></script>
-  <script src="script/app.js?v=6.35.2"></script>
+  <script src="script/state.js?v=6.37.0"></script>
+  <script src="script/dom.js?v=6.37.0"></script>
+  <script src="script/util.js?v=6.37.0"></script>
+  <script src="script/memory.js?v=6.37.0"></script>
+  <script src="script/api.js?v=6.37.0"></script>
+  <script src="script/progress.js?v=6.37.0"></script>
+  <script src="script/studytime.js?v=6.37.0"></script>
+  <script src="script/canvas.js?v=6.37.0"></script>
+  <script src="script/quiz.js?v=6.37.0"></script>
+  <script src="script/library.js?v=6.37.0"></script>
+  <script src="script/upload.js?v=6.37.0"></script>
+  <script src="script/manage.js?v=6.37.0"></script>
+  <script src="script/app.js?v=6.37.0"></script>
 </body>
 </html>

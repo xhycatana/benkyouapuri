@@ -234,19 +234,8 @@ function renderNode(node, container, depth) {
     count.className = 'ml-2 text-xs text-slate-400';
     count.textContent = (s.count || 0) + '問';
 
-    const del = document.createElement('button');
-    del.className = 'ml-auto px-2 text-xs text-slate-300 hover:text-red-600 focus:outline-none';
-    del.textContent = '×';
-    del.title = 'この問題集を削除';
-    del.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      deleteSet(s);
-    });
-
     row.appendChild(label);
     row.appendChild(count);
-    row.appendChild(del);
     container.appendChild(row);
   });
 }
@@ -265,6 +254,7 @@ function renderLibrary() {
     renderNode(buildTree(sets), libraryTree, 0);
   }
   updateSelectionUI();
+  if (currentPhase === 'manage') renderManage();
 }
 
 function updateSelectionUI() {
@@ -308,7 +298,10 @@ async function startFromSelection() {
       const sel = selection[p];
       const set = await api('/api/questions?path=' + encodeURIComponent(p));
       if (!Array.isArray(set.questions)) continue;
-      if (sel.normal) merged = merged.concat(set.questions);
+      // 出題中に問題を書き換えられるよう、どの問題集の問題かを持たせる（逆向きは書き換えの対象外）
+      if (sel.normal) merged = merged.concat(set.questions.map(function (q) {
+        return Object.assign({}, q, { setPath: p });
+      }));
       if (sel.swap) merged = merged.concat(set.questions.map(makeSwappedQuestion));
     }
     if (merged.length === 0) throw new Error('選んだ問題集に問題が入っていません。');
@@ -326,7 +319,10 @@ async function deleteSet(set) {
   if (!confirm(label + ' を削除します。よろしいですか。' + String.fromCharCode(10) +
                '解答履歴は残るので、同じ問題集を入れ直せば成績も戻ります。')) return;
   try {
-    await api('/api/questions?path=' + encodeURIComponent(set.path), { method: 'DELETE' });
+    await saveOrderNow();   // 保存待ちの並び順を先に送る（読み直したときに古い並びに戻らないように）
+    await enqueueManage(function () {
+      return api('/api/questions?path=' + encodeURIComponent(set.path), { method: 'DELETE' });
+    });
     delete selection[set.path];
     await loadLibrary();
   } catch (err) {
