@@ -835,14 +835,14 @@ function moveTarget() {
 
 function renderMoveList() {
   moveList.innerHTML = '';
-  const choose = function (dest, label, depth, disabledNote) {
+  // note は「いまの場所」などの目印。選べなくはしない（いまの場所を選んで、新しいフォルダを作って入れることもできる）
+  const choose = function (dest, label, depth, note) {
+    const picked = moveState.picked && moveState.dest === dest;
     const row = makeEl('button', 'w-full flex items-center text-left py-1.5 px-2 focus:outline-none ' +
-      (disabledNote ? 'text-slate-300 cursor-default' : 'hover:bg-slate-50 text-slate-800') +
-      (moveState.picked && moveState.dest === dest && !disabledNote ? ' bg-black text-white hover:bg-black' : ''));
+      (picked ? 'bg-black text-white hover:bg-black' : 'hover:bg-slate-50 text-slate-800'));
     row.style.paddingLeft = (8 + depth * 14) + 'px';
     row.appendChild(makeEl('span', 'flex-1', label));
-    if (disabledNote) row.appendChild(makeEl('span', 'text-[10px]', disabledNote));
-    row.disabled = !!disabledNote;
+    if (note) row.appendChild(makeEl('span', 'text-[10px] ' + (picked ? 'text-slate-300' : 'text-slate-400'), note));
     row.addEventListener('click', function () {
       moveState.dest = dest;
       moveState.picked = true;
@@ -868,8 +868,15 @@ function updateMovePreview() {
     return;
   }
   const to = moveTarget();
-  movePreview.textContent = '移動後：' + to.split('/').join('  >  ');
-  btnMoveOk.disabled = (to === moveState.from);
+  // フォルダを、自分自身の中へ入れる組み合わせ（例：フォルダ「A」を、新しいフォルダ「A」の中へ）は、移せない
+  const intoItself = moveState.isFolder && to.indexOf(moveState.from + '/') === 0;
+  const same = (to === moveState.from);
+  movePreview.textContent = intoItself
+    ? 'フォルダを、自分自身の中へは移せません。新しいフォルダの名前を変えてください。'
+    : same
+      ? 'いまの場所と同じです。別のフォルダを選ぶか、新しいフォルダの名前を入れてください。'
+      : '移動後：' + to.split('/').join('  >  ');
+  btnMoveOk.disabled = same || intoItself;
 }
 
 function openMoveDialog(from, isFolder) {
