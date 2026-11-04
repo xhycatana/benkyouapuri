@@ -15,7 +15,7 @@
 //   POST /api/questions                -> 問題集を保存する
 //   POST /api/questions {kind:'snapshot'}       -> 日ごとの問題数・合計知識量を保存する（同じ日は上書き。final の日は確定済み）
 //   POST /api/questions {kind:'ink'}            -> 書いた線の長さと画面サイズを、端末ごとに保存する
-//   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）
+//   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）。dryRun で確認だけ、keepOrder で並びを保つ
 //   POST /api/questions {kind:'shortcuts'}      -> 選択のショートカット一覧を保存する（まるごと置き換え）
 //   POST /api/questions {kind:'order'}          -> 一覧の並び順を保存する
 //   POST /api/questions {kind:'meta'}           -> 問題集の名前・逆向き許可だけを変える
@@ -345,7 +345,10 @@ async function addStudyTimeTotal(addSeconds) {
 // 1つずつ移すので、途中で失敗すると一部だけ移った状態になる（移せた分は一覧に反映する。一覧がずれたときは rebuild で直せる）。
 function dirOf(p) { return p.split('/').slice(0, -1).join('/'); }
 
-async function moveSets(from, to) {
+// opts.dryRun: 何も書かず、移す問題集の一覧（plan）と衝突の確認だけを返す。画面が1冊ずつ移すときの、事前の確認に使う
+// opts.keepOrder: 一覧での並びを変えない（フォルダ名の変更のように、親のフォルダが変わらない移動のとき）
+async function moveSets(from, to, opts) {
+  opts = opts || {};
   if (from === to) return { status: 400, error: '移動先が、いまの場所と同じです。' };
   const index = await readIndex();
   const isSet = index.sets.some(function (s) { return s.path === from; });
@@ -373,6 +376,10 @@ async function moveSets(from, to) {
     if (clash || (await readFile(SETS_DIR + '/' + p.newPath + '.json'))) {
       return { status: 409, error: '移動先に、同じ名前の問題集かフォルダがあります: ' + p.newPath };
     }
+  }
+
+  if (opts.dryRun) {
+    return { status: 200, moved: 0, plan: plan.map(function (p) { return { from: p.oldPath, to: p.newPath }; }) };
   }
 
   const done = [];
@@ -408,7 +415,7 @@ async function moveSets(from, to) {
       const byOld = {};
       done.forEach(function (p) { byOld[p.oldPath] = p.newPath; });
       index.sets.forEach(function (s) { if (byOld[s.path]) s.path = byOld[s.path]; });
-      if (dirOf(from) !== dirOf(to)) {
+      if (!opts.keepOrder && dirOf(from) !== dirOf(to)) {
         const moved = index.sets.filter(function (s) { return done.some(function (p) { return p.newPath === s.path; }); });
         index.sets = index.sets.filter(function (s) { return moved.indexOf(s) === -1; }).concat(moved);
       }
@@ -766,8 +773,8 @@ module.exports = async (req, res) => {
           res.status(400).json({ error: '場所の指定が正しくありません。' });
           return;
         }
-        const r = await moveSets(from, to);
-        if (r.status === 200) res.status(200).json({ moved: r.moved, from: from, to: to });
+        const r = await moveSets(from, to, { dryRun: body.dryRun === true, keepOrder: body.keepOrder === true });
+        if (r.status === 200) res.status(200).json({ moved: r.moved, from: from, to: to, plan: r.plan });
         else res.status(r.status).json({ error: r.error, moved: r.moved || 0 });
         return;
       }

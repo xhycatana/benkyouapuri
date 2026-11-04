@@ -906,22 +906,80 @@ function remapPathKeys(from, to) {
   });
 }
 
+// 移動中の表示。入力の見た目を、進捗（何冊中何冊目、棒、いま移している名前、経過時間）に切り替える
+let moveProgressTimer = null;
+
+function openMoveProgress(title) {
+  moveTitle.textContent = title;
+  moveForm.style.display = 'none';
+  moveProgress.classList.remove('hidden');
+  moveProgressText.textContent = '準備中…';
+  moveProgressBar.style.width = '0%';
+  moveProgressCurrent.textContent = '';
+  moveModal.classList.remove('hidden');
+  const started = Date.now();
+  const tick = function () {
+    const s = Math.floor((Date.now() - started) / 1000);
+    moveProgressElapsed.textContent = '経過 ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  };
+  tick();
+  clearInterval(moveProgressTimer);
+  moveProgressTimer = setInterval(tick, 1000);   // 1冊を移す間も、動いていると分かるように
+}
+
+function updateMoveProgress(done, total, currentName) {
+  moveProgressText.textContent = total > 0 ? (done + ' / ' + total + ' 冊') : '準備中…';
+  moveProgressBar.style.width = (total > 0 ? Math.round(done / total * 100) : 0) + '%';
+  moveProgressCurrent.textContent = currentName ? ('移動中：' + currentName) : '';
+}
+
+function closeMoveProgress() {
+  clearInterval(moveProgressTimer);
+  moveProgressTimer = null;
+  moveProgress.classList.add('hidden');
+  moveForm.style.display = '';
+  moveModal.classList.add('hidden');
+  moveState = null;
+}
+
 // 移動の実行。from の場所にあるものを to へ。成功したら true
-async function runMove(from, to) {
+// 移す問題集の一覧と衝突の確認を先にサーバーで行い（何も書かない）、そのあと1冊ずつ移す。
+// 1回の依頼を小さくするので、冊数が多くても、途中の様子が見える（サーバーの処理時間の上限にもかかりにくい）。
+async function runMove(from, to, title) {
   await saveOrderNow();   // 保存待ちの並び順を先に送る（移動で一覧が書き換わるため）
+  openMoveProgress(title || '移動中');
+  let done = 0, total = 0;
   try {
-    const r = await enqueueManage(function () { return postJSON({ kind: 'move', from: from, to: to }); });
+    const dry = await enqueueManage(function () { return postJSON({ kind: 'move', from: from, to: to, dryRun: true }); });
+    const plan = dry.plan || [];
+    total = plan.length;
+    const keepOrder = pathDir(from) === pathDir(to);   // フォルダ名の変更のように、親が変わらないときは並びを保つ
+    updateMoveProgress(0, total, '');
+    for (const step of plan) {
+      updateMoveProgress(done, total, step.from.split('/').join('  >  '));
+      await enqueueManage(function () {
+        return postJSON({ kind: 'move', from: step.from, to: step.to, keepOrder: keepOrder });
+      });
+      remapPathKeys(step.from, step.to);   // 移せた問題集から、選択の場所を付け替える
+      done++;
+    }
+    updateMoveProgress(done, total, '');
     remapPathKeys(from, to);
     await loadLibrary();
     renderManage();
-    setMessage(manageMessage, '移動しました（' + r.moved + '冊）。', 'ok');
+    closeMoveProgress();
+    setMessage(manageMessage, '移動しました（' + done + '冊）。', 'ok');
     return true;
   } catch (err) {
+    closeMoveProgress();
     if (err.unauthorized) return false;
     // 途中まで移っていることがあるので、一覧を読み直して、実際の状態を見せる
     await loadLibrary();
     renderManage();
-    setMessage(manageMessage, '移動できませんでした: ' + err.message, 'error');
+    // サーバーの「N件を移した後で…」の末尾は、1冊ずつ移す今は意味が違うので、画面の側の言い方に揃える
+    const reason = String(err.message).replace(/（\d+件を移した後で止まりました。[^）]*）$/, '');
+    setMessage(manageMessage, (total > 0 ? (done + ' / ' + total + ' 冊を移したところで止まりました: ') : '移動できませんでした: ') + reason +
+      (done > 0 ? '（移せた分は新しい場所にあります。残りは、もう一度同じ移動をすると続きから移せます）' : ''), 'error');
     return false;
   }
 }
@@ -934,11 +992,8 @@ btnMoveOk.addEventListener('click', async function () {
     return;
   }
   const from = moveState.from, to = moveTarget();
-  btnMoveOk.disabled = true;
-  btnMoveOk.textContent = '移動中…';
-  const ok = await runMove(from, to);
-  btnMoveOk.textContent = '移動する';
-  if (ok) closeMoveDialog(); else { btnMoveOk.disabled = false; closeMoveDialog(); }
+  const label = moveState.isFolder ? ('フォルダ「' + pathName(from) + '」を移動中') : ('「' + pathName(from) + '」を移動中');
+  await runMove(from, to, label);
 });
 btnMoveCancel.addEventListener('click', closeMoveDialog);
 moveNewFolder.addEventListener('input', function () { if (moveState) updateMovePreview(); });
@@ -959,7 +1014,6 @@ async function renameFolder(folder, input) {
     input.value = folder.name;
     return;
   }
-  setMessage(manageMessage, 'フォルダ名を変更しています…');
-  const ok = await runMove(folder.key, to);
+  const ok = await runMove(folder.key, to, 'フォルダ名を変更中');
   if (!ok) input.value = folder.name;
 }
