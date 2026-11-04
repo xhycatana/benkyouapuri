@@ -71,8 +71,11 @@ async function loadLibrary(silent) {
 }
 
 // --- ツリー ---
+// 木を作る。各階層に、フォルダと問題集を混ぜた1本の並び（order）を持たせる。
+// 並びは、一覧（index.json）の配列の順番で決まる。問題集は自分の順番、フォルダは「中の最初の問題集」の順番。
+// これで、問題集をフォルダより上にも置ける（▲▼で、フォルダと問題集を区別せず入れ替える）。
 function buildTree(sets) {
-  const root = { name: '', key: '', folders: [], items: [] };
+  const root = { name: '', key: '', folders: [], items: [], order: [] };
   sets.forEach(function (s) {
     const parts = s.path.split('/');
     let node = root;
@@ -82,12 +85,14 @@ function buildTree(sets) {
       let next = null;
       for (const f of node.folders) { if (f.name === parts[i]) { next = f; break; } }
       if (!next) {
-        next = { name: parts[i], key: prefix, folders: [], items: [] };
+        next = { name: parts[i], key: prefix, folders: [], items: [], order: [] };
         node.folders.push(next);
+        node.order.push({ folder: next });
       }
       node = next;
     }
     node.items.push(s);
+    node.order.push({ item: s });
   });
   return root;
 }
@@ -137,7 +142,7 @@ function makeFolderCheckbox(folder) {
 }
 
 function renderNode(node, container, depth) {
-  node.folders.forEach(function (f) {
+  function renderFolder(f) {
     const isClosed = closedFolders[f.key] === true;
 
     const row = document.createElement('div');
@@ -169,9 +174,9 @@ function renderNode(node, container, depth) {
     container.appendChild(row);
 
     if (!isClosed) renderNode(f, container, depth + 1);
-  });
+  }
 
-  node.items.forEach(function (s) {
+  function renderItem(s) {
     const row = document.createElement('div');
     row.className = 'flex items-center py-1.5 hover:bg-slate-50';
     row.style.paddingLeft = (depth * 12 + 16) + 'px';
@@ -253,6 +258,11 @@ function renderNode(node, container, depth) {
     row.appendChild(label);
     row.appendChild(count);
     container.appendChild(row);
+  }
+
+  // フォルダと問題集は、混ぜた1本の並びのまま描く
+  node.order.forEach(function (e) {
+    if (e.folder) renderFolder(e.folder); else renderItem(e.item);
   });
 }
 

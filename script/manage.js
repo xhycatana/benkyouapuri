@@ -39,8 +39,10 @@ function setMessage(box, text, kind) {
 // 一覧の保存順＝この順にしておくと、読み込み直したときに同じ並びの木が作られる。
 function flattenTree(node) {
   let out = [];
-  node.folders.forEach(function (f) { out = out.concat(flattenTree(f)); });
-  return out.concat(node.items);
+  node.order.forEach(function (e) {
+    out = out.concat(e.folder ? flattenTree(e.folder) : [e.item]);
+  });
+  return out;
 }
 
 function swapSibling(list, i, delta) {
@@ -95,11 +97,11 @@ function renderManageNode(node, container, depth, root) {
     return wrap;
   }
 
-  node.folders.forEach(function (f, i) {
+  function renderFolderRow(f, i) {
     const isClosed = closedFolders[f.key] === true;
     const row = makeEl('div', 'flex items-center py-1');
     row.style.paddingLeft = (depth * 12) + 'px';
-    row.appendChild(moveButtons(node.folders, i));
+    row.appendChild(moveButtons(node.order, i));
 
     const toggle = makeEl('button', 'w-6 h-7 shrink-0 text-slate-400 hover:text-black focus:outline-none', isClosed ? '▸' : '▾');
     toggle.title = isClosed ? '開く' : '閉じる';
@@ -123,12 +125,12 @@ function renderManageNode(node, container, depth, root) {
     container.appendChild(row);
 
     if (!isClosed) renderManageNode(f, container, depth + 1, root);
-  });
+  }
 
-  node.items.forEach(function (s, i) {
+  function renderSetRow(s, i) {
     const row = makeEl('div', 'flex items-center py-1');
     row.style.paddingLeft = (depth * 12) + 'px';
-    row.appendChild(moveButtons(node.items, i));
+    row.appendChild(moveButtons(node.order, i));
 
     // 名前（タイトル）。書き換えて確定すると、その場で保存される
     const name = makeEl('input', 'flex-1 min-w-0 p-1.5 border border-slate-200 text-sm focus:outline-none focus:border-black');
@@ -158,6 +160,11 @@ function renderManageNode(node, container, depth, root) {
     row.appendChild(mv);
     row.appendChild(del);
     container.appendChild(row);
+  }
+
+  // ▲▼は、フォルダと問題集を区別せず、隣の項目と入れ替える
+  node.order.forEach(function (e, i) {
+    if (e.folder) renderFolderRow(e.folder, i); else renderSetRow(e.item, i);
   });
 }
 
