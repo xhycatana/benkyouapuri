@@ -46,7 +46,6 @@ function switchPhase(newPhase) {
   if (newPhase === 'import') {
     reviewEndsSession = false;
     phaseImport.classList.remove('hidden');
-    fitHomeMargins();
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
     globalCanvas.resetPalmRejection();
@@ -89,26 +88,35 @@ function switchPhase(newPhase) {
     btnReviewNow.classList.add('hidden');
     initReviewPhase();
   }
+
+  fitScreenMargins();   // 表示した画面の余白を、全画面で揃える（出題中・丸付け中は何もしない）
 }
 
-// --- ホーム画面の余白 ---
+// --- スクロールする画面（ホーム・管理・編集・追加・推移・勉強時間・使い方）の余白 ---
 // 上下左右の余白を同じ大きさにする。大きさは、中身の幅を 768px（max-w-3xl）にしたときの左右の余白の 2/3。
 // 横向きの画面では中身が画面に収まらなくなるが、そのぶんはスクロールし、スクロールしきった先の下の余白も同じにする。
-const HOME_BASE_WIDTH = 768;
-const HOME_MARGIN_RATIO = 2 / 3;
+const SCREEN_BASE_WIDTH = 768;
+const SCREEN_MARGIN_RATIO = 2 / 3;
 
-function fitHomeMargins() {
-  if (currentPhase !== 'import') return;
+function fitScreenMargins() {
+  const sections = {
+    import: phaseImport, upload: phaseUpload, manage: phaseManage, edit: phaseEdit,
+    trend: phaseTrend, studytime: phaseStudyTime, help: phaseHelp
+  };
+  const section = sections[currentPhase];
+  if (!section) return;   // 出題中・丸付け中は、余白を変えない
   const W = window.innerWidth;
   // phaseContainer は body の余白の内側にある。画面の外枠にもともとある余白より小さくはできないので、それを最小にする
   const box = phaseContainer.getBoundingClientRect();
-  const margin = Math.max(box.top, (W - HOME_BASE_WIDTH) / 2 * HOME_MARGIN_RATIO);
-  phaseImport.style.maxWidth = Math.max(0, W - 2 * margin) + 'px';
-  phaseImport.style.marginTop = Math.max(0, margin - box.top) + 'px';
-  phaseImport.style.marginBottom = Math.max(0, margin - (window.innerHeight - box.bottom)) + 'px';
+  const margin = Math.max(box.top, (W - SCREEN_BASE_WIDTH) / 2 * SCREEN_MARGIN_RATIO);
+  // 幅は入れ物（phaseContainer）に対する割合で指定する。スクロールバーが出て入れ物が狭くなっても、はみ出さないように
+  const sideExtra = Math.max(0, margin - box.left);
+  section.style.maxWidth = 'calc(100% - ' + 2 * sideExtra + 'px)';
+  section.style.marginTop = Math.max(0, margin - box.top) + 'px';
+  section.style.marginBottom = Math.max(0, margin - (window.innerHeight - box.bottom)) + 'px';
 }
 
-window.addEventListener('resize', fitHomeMargins);
+window.addEventListener('resize', fitScreenMargins);
 
 function transitionPhase(actionAfterFadeOut) {
   // すでに暗転中（action の実行中）に呼ばれた場合は、さらに演出を重ねずにその場で実行する。

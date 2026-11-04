@@ -213,7 +213,7 @@ function collectSets(node) {
 }
 
 // フォルダの選択欄。中の問題集がすべて「そのまま」で選ばれていれば on、一部なら partial、1つもなければ off
-function makeFolderCheckbox(folder) {
+function makeFolderCheckbox(folder, isRoot) {
   const sets = collectSets(folder);
   const selectedCount = sets.filter(function (s) { return isSelected(s.path); }).length;
   const state = selectedCount === 0 ? 'off' : (selectedCount === sets.length ? 'on' : 'partial');
@@ -222,7 +222,8 @@ function makeFolderCheckbox(folder) {
   btn.type = 'button';
   btn.className = 'relative flex items-center justify-center w-5 h-5 border-2 border-black cursor-pointer shrink-0 focus:outline-none ' +
     (state === 'on' ? 'bg-black text-white' : 'bg-white text-black');
-  btn.title = state === 'on' ? 'このフォルダの問題集の選択を外す' : 'このフォルダの問題集をすべて選ぶ';
+  if (isRoot) btn.title = state === 'on' ? 'すべての問題集の選択を外す' : 'すべての問題集を選ぶ';
+  else btn.title = state === 'on' ? 'このフォルダの問題集の選択を外す' : 'このフォルダの問題集をすべて選ぶ';
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -244,6 +245,30 @@ function makeFolderCheckbox(folder) {
     renderLibrary();
   });
   return btn;
+}
+
+// 一番上の階層（名前のないルートフォルダ）の行。チェックボックスは、全問題集をまとめて選ぶ・外す。
+// 名前も絵も置かない（完全に無名）。最上位の項目は、この行の下に線でつながる。
+function renderRootRow(root, container) {
+  const row = document.createElement('div');
+  row.className = 'w-full flex items-center py-1.5 hover:bg-slate-50';
+  row.style.position = 'relative';
+
+  const box = makeFolderCheckbox(root, true);
+  box.classList.add('mr-2');
+
+  row.appendChild(box);
+
+  // チェックボックスの真ん中から、行の下まで縦線を引く（次の行の線へつなげる）
+  const line = document.createElement('div');
+  line.className = 'absolute bg-slate-400 pointer-events-none';
+  line.style.left = '10px';
+  line.style.top = 'calc(50% + 10px)';
+  line.style.bottom = '0';
+  line.style.width = '1px';
+  row.appendChild(line);
+
+  container.appendChild(row);
 }
 
 function renderNode(node, container, depth, lastFlags) {
@@ -330,7 +355,9 @@ function renderLibrary() {
   if (libraryIndex.sets.length === 0) {
     setTreeMessage('まだ問題集がありません。「問題集を追加」から登録してください。');
   } else {
-    renderNode(buildTree(sets), libraryTree, 0);
+    const root = buildTree(sets);
+    renderRootRow(root, libraryTree);
+    renderNode(root, libraryTree, 0);
   }
   libraryTree.scrollTop = scrollTop;
   // 矢印の意味の凡例。逆向きを許可した問題集があるときだけ出す
