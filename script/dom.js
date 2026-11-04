@@ -15,6 +15,8 @@ const phaseContainer = document.getElementById('phase-container');
 const ruledLines = document.getElementById('ruled-lines');
 
 const libraryShortcuts = document.getElementById('library-shortcuts');
+const libraryLegend = document.getElementById('library-legend');
+const libraryNotice = document.getElementById('library-notice');
 const shortcutActions = document.getElementById('shortcut-actions');
 const manageShortcuts = document.getElementById('manage-shortcuts');
 const libraryTree = document.getElementById('library-tree');

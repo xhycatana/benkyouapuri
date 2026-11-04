@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=7.4.2">
+  <link rel="stylesheet" href="style.css?v=7.5.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -141,6 +141,7 @@
             <div class="flex items-center justify-between">
               <span class="text-sm font-bold text-slate-700">問題集から選ぶ</span>
               <div class="flex items-center space-x-3">
+                <span id="shortcut-actions" class="flex items-center space-x-3"></span>
                 <button id="btn-library-reload" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">再読み込み</button>
                 <button id="btn-open-manage" class="text-xs text-slate-400 hover:text-black underline focus:outline-none">管理</button>
                 <button id="btn-open-upload" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">問題集を追加</button>
@@ -148,13 +149,14 @@
             </div>
 
             <div id="library-shortcuts" class="flex flex-wrap items-center gap-1"></div>
-            <div id="shortcut-actions" class="flex flex-wrap items-center gap-3 text-xs"></div>
             <div id="library-tree" class="max-h-[28rem] overflow-y-auto border border-slate-200 p-2 text-sm">
               <p class="text-xs text-slate-400">読み込み中…</p>
             </div>
 
+            <p id="library-legend" class="hidden text-[10px] text-slate-400">逆向きを許可した問題集のマーク：→ そのまま　← 逆向きだけ　⇄ 両方。押すたびに、未選択 → そのまま → 逆向き → 両方 の順に切り替わります。</p>
+
             <div class="flex items-center justify-between">
-              <span id="library-selected" class="text-xs text-slate-400">未選択</span>
+              <span class="text-xs"><span id="library-selected" class="text-slate-400">未選択</span><span id="library-notice" class="ml-2 text-red-600"></span></span>
               <button id="btn-start-selected" class="px-5 py-2.5 bg-black text-white text-sm font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>
                 選択した問題集で開始
               </button>
@@ -196,7 +198,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v7.4.2</span>
+              <span class="cursor-default select-none font-mono">v7.5.0</span>
             </div>
           </div>
         </section>
@@ -883,20 +885,20 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=7.4.2"></script>
-  <script src="script/dom.js?v=7.4.2"></script>
-  <script src="script/util.js?v=7.4.2"></script>
-  <script src="script/memory.js?v=7.4.2"></script>
-  <script src="script/api.js?v=7.4.2"></script>
-  <script src="script/progress.js?v=7.4.2"></script>
-  <script src="script/studytime.js?v=7.4.2"></script>
-  <script src="script/canvas.js?v=7.4.2"></script>
-  <script src="script/quiz.js?v=7.4.2"></script>
-  <script src="script/library.js?v=7.4.2"></script>
-  <script src="script/shortcuts.js?v=7.4.2"></script>
-  <script src="script/upload.js?v=7.4.2"></script>
-  <script src="script/manage.js?v=7.4.2"></script>
-  <script src="script/trend.js?v=7.4.2"></script>
-  <script src="script/app.js?v=7.4.2"></script>
+  <script src="script/state.js?v=7.5.0"></script>
+  <script src="script/dom.js?v=7.5.0"></script>
+  <script src="script/util.js?v=7.5.0"></script>
+  <script src="script/memory.js?v=7.5.0"></script>
+  <script src="script/api.js?v=7.5.0"></script>
+  <script src="script/progress.js?v=7.5.0"></script>
+  <script src="script/studytime.js?v=7.5.0"></script>
+  <script src="script/canvas.js?v=7.5.0"></script>
+  <script src="script/quiz.js?v=7.5.0"></script>
+  <script src="script/library.js?v=7.5.0"></script>
+  <script src="script/shortcuts.js?v=7.5.0"></script>
+  <script src="script/upload.js?v=7.5.0"></script>
+  <script src="script/manage.js?v=7.5.0"></script>
+  <script src="script/trend.js?v=7.5.0"></script>
+  <script src="script/app.js?v=7.5.0"></script>
 </body>
 </html>

@@ -120,16 +120,22 @@ function renderShortcuts() {
   });
   if (differs) libraryShortcuts.appendChild(makeEl('span', 'ml-1 text-[10px] text-slate-400', '変更あり'));
 
-  const link = function (label, onClick) {
-    const b = makeEl('button', 'text-slate-500 hover:text-black underline focus:outline-none', label);
+  // 保存のリンクは、見出し「問題集から選ぶ」の右側（いつもある行）に出す。
+  // 一覧の上に行を出し入れすると、選ぶたびに一覧が押し下げられて、スクロールがずれるため。
+  // どのショートカットを上書きするかは、強調されているボタン（active）で分かるので、ラベルは短くする。
+  const link = function (label, title, onClick) {
+    const b = makeEl('button', 'text-xs text-slate-600 hover:text-black underline focus:outline-none whitespace-nowrap', label);
+    b.title = title;
     b.addEventListener('click', onClick);
     shortcutActions.appendChild(b);
   };
   if (items.length > 0) {
-    if (differs) link('「' + active.name + '」を上書き', overwriteShortcut);
-    link(active ? '別の名前で保存' : 'この選択を保存', createShortcut);
+    if (differs) link('上書き', '「' + active.name + '」の中身を、いまの選択に置き換える', overwriteShortcut);
+    link(active ? '別名で保存' : '選択を保存', '問題集の選び方に名前を付けて、ショートカットとして保存する', createShortcut);
   }
-  if (shortcutNotice && JSON.stringify(items) === shortcutNoticeKey) shortcutActions.appendChild(makeEl('span', 'text-red-600', shortcutNotice));
+
+  // 見つからなかった問題集の知らせは、一覧の下の「○冊を選択中」の行に出す（高さが変わらない場所）
+  libraryNotice.textContent = (shortcutNotice && JSON.stringify(items) === shortcutNoticeKey) ? shortcutNotice : '';
 }
 
 // --- 管理ページ（並べ替え・名前の変更・削除） ---

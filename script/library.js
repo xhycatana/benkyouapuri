@@ -18,6 +18,88 @@ function isSelected(path) {
   return !!(s && (s.normal || s.swap));
 }
 
+// 問題集の選択の状態: 'off'（未選択）/ 'normal'（そのまま）/ 'swap'（逆向きだけ）/ 'both'（両方）
+function selectionState(path) {
+  const s = selection[path];
+  if (s && s.normal && s.swap) return 'both';
+  if (s && s.swap) return 'swap';
+  if (s && s.normal) return 'normal';
+  return 'off';
+}
+
+function setSelectionState(path, state) {
+  if (!selection[path]) selection[path] = { normal: false, swap: false };
+  selection[path].normal = (state === 'normal' || state === 'both');
+  selection[path].swap = (state === 'swap' || state === 'both');
+}
+
+function setAllowsSwap(path) {
+  const set = libraryIndex.sets.find(function (x) { return x.path === path; });
+  return !!(set && set.allowSwap);
+}
+
+// 押すたびの切り替え。逆向きを許可した問題集: 未選択 → そのまま → 逆向き → 両方 → 未選択。それ以外: 未選択 ↔ 選択
+function cycleSelection(path) {
+  const order = setAllowsSwap(path) ? ['off', 'normal', 'swap', 'both'] : ['off', 'normal'];
+  const at = order.indexOf(selectionState(path));
+  setSelectionState(path, order[(at + 1) % order.length]);
+}
+
+// 問題集を、選ぶ（そのまま）／外す。フォルダのチェックや、名前を押したときに使う
+function setSelected(path, on) {
+  setSelectionState(path, on ? 'normal' : 'off');
+}
+
+// チェックボックスの中の絵。そのまま ✓（逆向きを許可していない問題集）、→ そのまま、← 逆向きだけ、⇄ 両方
+const SELECT_ICONS = {
+  check: ['M5 13l4 4L19 7'],
+  normal: ['M5 12h14', 'M13 6l6 6-6 6'],
+  swap: ['M19 12H5', 'M11 6l-6 6 6 6'],
+  both: ['M4 8h14', 'M14 4l4 4-4 4', 'M20 16H6', 'M10 12l-4 4 4 4']
+};
+const SELECT_TITLES = {
+  off: '未選択（押すと、そのまま）',
+  normal: 'そのまま出題する（押すと、逆向きだけ）',
+  swap: '答えを問題として、逆向きだけを出題する（押すと、両方）',
+  both: 'そのまま と 逆向き の両方を出題する（押すと、未選択）'
+};
+
+// チェックボックス（ボタン）。選ぶと、白地から黒地＋白い絵へ反転する。
+// 逆向きを許可した問題集は、絵が矢印になる（→ そのまま、← 逆向きだけ、⇄ 両方）。それ以外は ✓。
+function makeSelectBox(path) {
+  const state = selectionState(path);
+  const swappable = setAllowsSwap(path);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'relative flex items-center justify-center w-5 h-5 border-2 border-black cursor-pointer shrink-0 focus:outline-none ' +
+    (state === 'off' ? 'bg-white text-white' : 'bg-black text-white');
+  btn.title = swappable ? SELECT_TITLES[state] : (state === 'off' ? '出題する問題集として選ぶ' : '選択を外す');
+
+  if (state !== 'off') {
+    const icon = swappable ? SELECT_ICONS[state] : SELECT_ICONS.check;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', swappable ? '3' : '3.5');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('class', swappable ? 'w-3.5 h-3.5' : 'w-3 h-3');
+    icon.forEach(function (d) {
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', d);
+      svg.appendChild(p);
+    });
+    btn.appendChild(svg);
+  }
+  btn.addEventListener('click', function () {
+    cycleSelection(path);
+    renderLibrary();   // フォルダのチェック（一部・全部）も、合わせて更新する
+  });
+  return btn;
+}
+
 
 // --- 一覧の読み込み ---
 function setTreeMessage(text, isError) {
@@ -71,6 +153,32 @@ async function loadLibrary(silent) {
 }
 
 // --- ツリー ---
+// 木の字下げ（1階層ぶん、px）。フォルダも問題集も、同じ階層なら同じ左端にそろえる。
+// 階層の違い（フォルダの中身か、フォルダと同じ階層か）が、字下げの差ではっきり見えるように、広めにしている
+const TREE_INDENT = 20;
+
+// 木の線（├ └ │）を、行の中に描く。どの項目が、どのフォルダの下にあるかを、線でたどれるようにする。
+// 最上位の項目も、「見えないルートフォルダ」の中身として、線でつなぐ（最上位の行は階層1）。
+//   depth: この行の階層（1 が最上位）
+//   lastFlags: 上の階層のフォルダが、兄弟の最後かどうか。最後でなければ、その階層の位置に縦線を続ける
+//   isLast: この行が、兄弟の最後かどうか。最後なら「└」、そうでなければ「├」
+// 線は、親の行のチェックボックスの真ん中（階層の左端 + 10px）に引く。
+function addTreeGuides(row, depth, lastFlags, isLast) {
+  row.style.position = 'relative';
+  const line = function (css) {
+    const d = document.createElement('div');
+    d.className = 'absolute bg-slate-400 pointer-events-none';
+    Object.keys(css).forEach(function (k) { d.style[k] = css[k]; });
+    row.appendChild(d);
+  };
+  lastFlags.forEach(function (last, k) {
+    if (!last) line({ left: (k * TREE_INDENT + 10) + 'px', top: '0', bottom: '0', width: '1px' });
+  });
+  const x = (depth - 1) * TREE_INDENT + 10;
+  line({ left: x + 'px', top: '0', height: isLast ? '50%' : '100%', width: '1px' });                  // 縦線（最後の行は、真ん中まで）
+  line({ left: x + 'px', top: '50%', width: (TREE_INDENT - 12) + 'px', height: '1px' });               // 横線（項目の手前まで）
+}
+
 // 木を作る。各階層に、フォルダと問題集を混ぜた1本の並び（order）を持たせる。
 // 並びは、一覧（index.json）の配列の順番で決まる。問題集は自分の順番、フォルダは「中の最初の問題集」の順番。
 // これで、問題集をフォルダより上にも置ける（▲▼で、フォルダと問題集を区別せず入れ替える）。
@@ -107,7 +215,7 @@ function collectSets(node) {
 // フォルダの選択欄。中の問題集がすべて「そのまま」で選ばれていれば on、一部なら partial、1つもなければ off
 function makeFolderCheckbox(folder) {
   const sets = collectSets(folder);
-  const selectedCount = sets.filter(function (s) { return selection[s.path] && selection[s.path].normal; }).length;
+  const selectedCount = sets.filter(function (s) { return isSelected(s.path); }).length;
   const state = selectedCount === 0 ? 'off' : (selectedCount === sets.length ? 'on' : 'partial');
 
   const btn = document.createElement('button');
@@ -131,23 +239,21 @@ function makeFolderCheckbox(folder) {
 
   btn.addEventListener('click', function () {
     const turnOn = state !== 'on';
-    sets.forEach(function (s) {
-      if (!selection[s.path]) selection[s.path] = { normal: false, swap: false };
-      selection[s.path].normal = turnOn;
-      if (!turnOn) selection[s.path].swap = false;   // 外すときは、逆向きの選択も外す
-    });
+    // 選ぶときは、まだ選んでいない問題集を「そのまま」で選ぶ（すでに選んでいる向きは、そのまま残す）。外すときは、逆向きも含めて、すべて外す
+    sets.forEach(function (s) { if (!turnOn || !isSelected(s.path)) setSelected(s.path, turnOn); });
     renderLibrary();
   });
   return btn;
 }
 
-function renderNode(node, container, depth) {
-  function renderFolder(f) {
+function renderNode(node, container, depth, lastFlags) {
+  lastFlags = lastFlags || [];
+  function renderFolder(f, isLast) {
     const isClosed = closedFolders[f.key] === true;
 
     const row = document.createElement('div');
     row.className = 'w-full flex items-center py-1.5 hover:bg-slate-50';
-    row.style.paddingLeft = (depth * 12) + 'px';
+    row.style.paddingLeft = ((depth + 1) * TREE_INDENT) + 'px';   // 最上位も、ルートの中の1階層目として、線の分だけ内側から始める
 
     const toggle = document.createElement('button');
     toggle.className = 'flex-1 flex items-center text-left focus:outline-none';
@@ -171,83 +277,31 @@ function renderNode(node, container, depth) {
     box.classList.add('mr-2');
     row.appendChild(box);
     row.appendChild(toggle);
+    addTreeGuides(row, depth + 1, lastFlags, isLast);
     container.appendChild(row);
 
-    if (!isClosed) renderNode(f, container, depth + 1);
+    // 中の階層には、この行が兄弟の最後かどうかを渡す
+    if (!isClosed) renderNode(f, container, depth + 1, lastFlags.concat([isLast]));
   }
 
-  function renderItem(s) {
+  function renderItem(s, isLast) {
     const row = document.createElement('div');
     row.className = 'flex items-center py-1.5 hover:bg-slate-50';
-    row.style.paddingLeft = (depth * 12 + 16) + 'px';
+    row.style.paddingLeft = ((depth + 1) * TREE_INDENT) + 'px';   // フォルダと同じ階層なら、同じ左端（余分な字下げを付けない）
 
     if (!selection[s.path]) selection[s.path] = { normal: false, swap: false };
-    const sel = selection[s.path];
 
-    // チェックを入れると白地から黒地＋白いチェックへ反転する、同じ見た目のチェックボックス。
-    // そのまま(normal)・逆(swap)の2つを線でつないで1組に見せることで区別する（文字は使わない）。
-    function makeCheckbox(dir, title) {
-      const wrap = document.createElement('label');
-      wrap.className = 'relative flex items-center justify-center w-5 h-5 border-2 border-black cursor-pointer shrink-0 bg-white';
-      wrap.title = title;
-
-      const box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = sel[dir];
-      box.className = 'sr-only';
-
-      const mark = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      mark.setAttribute('viewBox', '0 0 24 24');
-      mark.setAttribute('fill', 'none');
-      mark.setAttribute('stroke', 'currentColor');
-      mark.setAttribute('stroke-width', '3.5');
-      mark.setAttribute('stroke-linecap', 'round');
-      mark.setAttribute('stroke-linejoin', 'round');
-      mark.className.baseVal = 'hidden w-3 h-3 text-white';
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', 'M5 13l4 4L19 7');
-      mark.appendChild(path);
-
-      function refresh() {
-        wrap.classList.toggle('bg-black', box.checked);
-        wrap.classList.toggle('bg-white', !box.checked);
-        mark.classList.toggle('hidden', !box.checked);
-      }
-      box.addEventListener('change', function () {
-        sel[dir] = box.checked;
-        refresh();
-        updateSelectionUI();
-      });
-      refresh();
-
-      wrap.appendChild(box);
-      wrap.appendChild(mark);
-      return wrap;
-    }
-
-    if (s.allowSwap) {
-      // 2つのチェックボックスを短い線でつないで、1組の選択肢だと分かるようにする
-      const group = document.createElement('div');
-      group.className = 'flex items-center mr-2';
-      const line = document.createElement('div');
-      line.className = 'w-5 h-0.5 bg-black shrink-0';
-      group.appendChild(makeCheckbox('normal', 'そのまま出題する'));
-      group.appendChild(line);
-      group.appendChild(makeCheckbox('swap', '答えを問題として、逆向きに出題する'));
-      row.appendChild(group);
-    } else {
-      const solo = document.createElement('div');
-      solo.className = 'mr-2';
-      solo.appendChild(makeCheckbox('normal', 'そのまま出題する'));
-      row.appendChild(solo);
-    }
+    const solo = document.createElement('div');
+    solo.className = 'mr-2';
+    solo.appendChild(makeSelectBox(s.path));
+    row.appendChild(solo);
 
     const label = document.createElement('span');
     label.className = 'text-slate-800 cursor-pointer';
     label.textContent = s.title || s.path.split('/').pop();
     label.addEventListener('click', function () {
-      // タイトルをクリックしたときは、そのまま(normal)のチェックを切り替える（今まで通りの手軽さを残す）
-      sel.normal = !sel.normal;
+      // 名前を押したときは、選ぶ（そのまま）／外すを切り替える。向きを順に切り替えず、手軽に選び外しできるようにする
+      setSelected(s.path, !isSelected(s.path));
       renderLibrary();
     });
 
@@ -257,17 +311,20 @@ function renderNode(node, container, depth) {
 
     row.appendChild(label);
     row.appendChild(count);
+    addTreeGuides(row, depth + 1, lastFlags, isLast);
     container.appendChild(row);
   }
 
   // フォルダと問題集は、混ぜた1本の並びのまま描く
-  node.order.forEach(function (e) {
-    if (e.folder) renderFolder(e.folder); else renderItem(e.item);
+  node.order.forEach(function (e, i) {
+    const isLast = i === node.order.length - 1;
+    if (e.folder) renderFolder(e.folder, isLast); else renderItem(e.item, isLast);
   });
 }
 
 function renderLibrary() {
   const sets = libraryIndex.sets;
+  const scrollTop = libraryTree.scrollTop;   // 描き直しても、スクロール位置が先頭へ戻らないように
   libraryTree.innerHTML = '';
 
   if (libraryIndex.sets.length === 0) {
@@ -275,6 +332,9 @@ function renderLibrary() {
   } else {
     renderNode(buildTree(sets), libraryTree, 0);
   }
+  libraryTree.scrollTop = scrollTop;
+  // 矢印の意味の凡例。逆向きを許可した問題集があるときだけ出す
+  libraryLegend.classList.toggle('hidden', !sets.some(function (s) { return s.allowSwap; }));
   updateSelectionUI();
   if (currentPhase === 'manage') renderManage();
 }

@@ -85,7 +85,8 @@ function makeArrowButton(label, title, disabled, onClick) {
   return b;
 }
 
-function renderManageNode(node, container, depth, root) {
+function renderManageNode(node, container, depth, root, lastFlags) {
+  lastFlags = lastFlags || [];
   function moveButtons(list, i) {
     const wrap = makeEl('div', 'flex shrink-0 mr-2');
     wrap.appendChild(makeArrowButton('▲', '上へ', i === 0, function () {
@@ -97,10 +98,10 @@ function renderManageNode(node, container, depth, root) {
     return wrap;
   }
 
-  function renderFolderRow(f, i) {
+  function renderFolderRow(f, i, isLast) {
     const isClosed = closedFolders[f.key] === true;
     const row = makeEl('div', 'flex items-center py-1');
-    row.style.paddingLeft = (depth * 12) + 'px';
+    row.style.paddingLeft = ((depth + 1) * TREE_INDENT) + 'px';
     row.appendChild(moveButtons(node.order, i));
 
     const toggle = makeEl('button', 'w-6 h-7 shrink-0 text-slate-400 hover:text-black focus:outline-none', isClosed ? '▸' : '▾');
@@ -122,15 +123,17 @@ function renderManageNode(node, container, depth, root) {
     fmove.title = 'このフォルダを、別の場所へ移す';
     fmove.addEventListener('click', function () { openMoveDialog(f.key, true); });
     row.appendChild(fmove);
+    addTreeGuides(row, depth + 1, lastFlags, isLast);
     container.appendChild(row);
 
-    if (!isClosed) renderManageNode(f, container, depth + 1, root);
+    if (!isClosed) renderManageNode(f, container, depth + 1, root, lastFlags.concat([isLast]));
   }
 
-  function renderSetRow(s, i) {
+  function renderSetRow(s, i, isLast) {
     const row = makeEl('div', 'flex items-center py-1');
-    row.style.paddingLeft = (depth * 12) + 'px';
+    row.style.paddingLeft = ((depth + 1) * TREE_INDENT) + 'px';
     row.appendChild(moveButtons(node.order, i));
+    row.appendChild(makeEl('span', 'w-6 shrink-0'));   // フォルダの開閉の矢印と同じ幅の空き。同じ階層で、名前の左端をそろえる
 
     // 名前（タイトル）。書き換えて確定すると、その場で保存される
     const name = makeEl('input', 'flex-1 min-w-0 p-1.5 border border-slate-200 text-sm focus:outline-none focus:border-black');
@@ -159,12 +162,14 @@ function renderManageNode(node, container, depth, root) {
     row.appendChild(edit);
     row.appendChild(mv);
     row.appendChild(del);
+    addTreeGuides(row, depth + 1, lastFlags, isLast);
     container.appendChild(row);
   }
 
   // ▲▼は、フォルダと問題集を区別せず、隣の項目と入れ替える
   node.order.forEach(function (e, i) {
-    if (e.folder) renderFolderRow(e.folder, i); else renderSetRow(e.item, i);
+    const isLast = i === node.order.length - 1;
+    if (e.folder) renderFolderRow(e.folder, i, isLast); else renderSetRow(e.item, i, isLast);
   });
 }
 
@@ -182,7 +187,7 @@ function renderManage() {
     return;
   }
   const root = buildTree(libraryIndex.sets);
-  renderManageNode(root, manageTree, 0, root);
+  renderManageNode(root, manageTree, 0, root, []);
 }
 
 async function renameSet(set, input) {
