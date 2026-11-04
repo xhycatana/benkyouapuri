@@ -940,6 +940,11 @@ function updateMoveProgress(done, total, currentName) {
   moveProgressCurrent.textContent = currentName ? ('移動中：' + currentName) : '';
 }
 
+// 100%になったあとの、仕上げ（一覧と成績を読み直す）の間の表示。何も出ないと、止まったように見えるため
+function showMoveFinishing() {
+  moveProgressCurrent.textContent = '仕上げ中…（一覧と成績を読み直しています。もう少しお待ちください）';
+}
+
 function closeMoveProgress() {
   clearInterval(moveProgressTimer);
   moveProgressTimer = null;
@@ -971,6 +976,7 @@ async function runMove(from, to, title) {
       done++;
     }
     updateMoveProgress(done, total, '');
+    showMoveFinishing();
     remapPathKeys(from, to);
     await loadLibrary();
     renderManage();
