@@ -38,15 +38,20 @@ function saveMemorySettings() {
 // いま思い出せる確率を R = exp(-経過日数 / 記憶の寿命) で見積もる。
 // 時間が経つほど必ず下がるので、どれだけ習熟した問題でも寿命を過ぎれば戻ってくる。
 // 正解数を足し込む方式では、熟達した問題が頭打ちになって二度と出題されなかった。
-function calculateProbability(q) {
-  // 一度も解いていない問題は、思い出せるはずがないので最優先
-  if (!q.last_answered_at) return 0;
+// 確率の対数（R = exp(x) の x ＝ -経過日数 / 記憶の寿命）。大きいほど覚えている。
+// 一度も解いていない問題は、思い出せるはずがないので -Infinity（最優先）。
+// atMs を渡すと、その時刻での値になる（過去の日の終わりの値を、あとから計算するために使う）。省略すると、いま
+function forgettingExponent(q, atMs) {
+  if (!q.last_answered_at) return -Infinity;
 
   const lifespan = (q.lifespan > 0) ? q.lifespan : FIRST_INTERVAL_DAYS;
-  const elapsedMs = Math.max(0, Date.now() - Date.parse(q.last_answered_at));
+  const elapsedMs = Math.max(0, (atMs === undefined ? Date.now() : atMs) - Date.parse(q.last_answered_at));
   const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24);
+  return -elapsedDays / lifespan;
+}
 
-  const r = Math.exp(-elapsedDays / lifespan);
+function calculateProbability(q, atMs) {
+  const r = Math.exp(forgettingExponent(q, atMs));
   return Math.min(Math.max(r, 0), 1);
 }
 
@@ -55,16 +60,19 @@ function sortQuestionsBySrs(list) {
   // 並べ替えは同点なら元の順を保つので、先に混ぜておかないと、上限で切ったときに
   // 新しい問題集では毎回、先頭から同じ問題ばかりが選ばれてしまう。
   // 確率の違う問題どうしの順は、混ぜても並べ替えで元に戻るので影響しない。
+  // 並べ替えには確率そのものではなく、その対数を使う。ひどく忘れた問題（寿命が短いまま長く放置した問題）は
+  // 確率が 0 に潰れて区別できなくなり、同点扱いで無作為に選ばれてしまうため。
+  // 未解答は -Infinity なので、一度も解いていない問題どうしだけが同点になる。
   const scored = shuffleArray(list.slice()).map(q => ({
     item: q,
-    prob: calculateProbability(q)
+    prob: forgettingExponent(q)
   }));
 
   // 思い出せる確率が低い順に並べる。
   // 直前に解いた問題は経過時間がほぼ0なので確率がほぼ100%になり、自然に後ろへ回る。
   // かつては「時間ロック」で明示的に締め出していたが、それは正解数を足し込む
   // 旧アルゴリズムのための対策だった。忘却曲線に置き換えた時点で不要になったので廃止した。
-  scored.sort((a, b) => a.prob - b.prob);
+  scored.sort((a, b) => (a.prob < b.prob ? -1 : a.prob > b.prob ? 1 : 0));   // -Infinity どうしの引き算は NaN になるので使わない
 
   return scored.map(s => s.item);
 }

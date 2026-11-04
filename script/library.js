@@ -11,7 +11,6 @@ let libraryIndex = { sets: [] };
 // 「問題と答えを逆にする」は問題集ごとに許可・不許可が決まっており（upload.js の allowSwap）、
 // 許可されている問題集だけ、選択欄にチェックボックスが2つ並ぶ。
 let selection = {};
-let activeTags = [];          // 絞り込みに使っているタグ
 let closedFolders = {};       // 閉じているフォルダ（既定は開いた状態）
 
 function isSelected(path) {
@@ -64,46 +63,11 @@ async function loadLibrary(silent) {
       if (!set.allowSwap) selection[p].swap = false;
     });
     renderLibrary();
+    startupSnapshots();   // 開かなかった日も含めて、過去の日の値を確定させる
+    loadShortcuts();
   } catch (err) {
     if (!err.unauthorized) setTreeMessage(err.message, true);
   }
-}
-
-// --- タグ ---
-function allTags() {
-  const seen = {};
-  libraryIndex.sets.forEach(function (s) {
-    (s.tags || []).forEach(function (t) { seen[t] = true; });
-  });
-  return Object.keys(seen).sort(function (a, b) { return a.localeCompare(b, 'ja'); });
-}
-
-// タグは絞り込み。複数選ぶと、そのすべてを持つ問題集だけが残る。
-function visibleSets() {
-  if (activeTags.length === 0) return libraryIndex.sets;
-  return libraryIndex.sets.filter(function (s) {
-    const tags = s.tags || [];
-    return activeTags.every(function (t) { return tags.indexOf(t) !== -1; });
-  });
-}
-
-function renderTags() {
-  libraryTags.innerHTML = '';
-  const tags = allTags();
-  tags.forEach(function (t) {
-    const on = activeTags.indexOf(t) !== -1;
-    const b = document.createElement('button');
-    b.className = 'px-2.5 py-1 text-xs border focus:outline-none ' +
-      (on ? 'bg-black text-white border-black'
-          : 'bg-white text-slate-500 border-slate-300 hover:border-black');
-    b.textContent = t;
-    b.addEventListener('click', function () {
-      const at = activeTags.indexOf(t);
-      if (at === -1) activeTags.push(t); else activeTags.splice(at, 1);
-      renderLibrary();
-    });
-    libraryTags.appendChild(b);
-  });
 }
 
 // --- ツリー ---
@@ -128,13 +92,60 @@ function buildTree(sets) {
   return root;
 }
 
+// フォルダの中（さらに下のフォルダも含む）の問題集すべて
+function collectSets(node) {
+  let out = node.items.slice();
+  node.folders.forEach(function (f) { out = out.concat(collectSets(f)); });
+  return out;
+}
+
+// フォルダの選択欄。中の問題集がすべて「そのまま」で選ばれていれば on、一部なら partial、1つもなければ off
+function makeFolderCheckbox(folder) {
+  const sets = collectSets(folder);
+  const selectedCount = sets.filter(function (s) { return selection[s.path] && selection[s.path].normal; }).length;
+  const state = selectedCount === 0 ? 'off' : (selectedCount === sets.length ? 'on' : 'partial');
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'relative flex items-center justify-center w-5 h-5 border-2 border-black cursor-pointer shrink-0 focus:outline-none ' +
+    (state === 'on' ? 'bg-black text-white' : 'bg-white text-black');
+  btn.title = state === 'on' ? 'このフォルダの問題集の選択を外す' : 'このフォルダの問題集をすべて選ぶ';
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '3.5');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('class', 'w-3 h-3' + (state === 'off' ? ' hidden' : ''));
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', state === 'partial' ? 'M6 12h12' : 'M5 13l4 4L19 7');   // 一部だけなら横線
+  svg.appendChild(path);
+  btn.appendChild(svg);
+
+  btn.addEventListener('click', function () {
+    const turnOn = state !== 'on';
+    sets.forEach(function (s) {
+      if (!selection[s.path]) selection[s.path] = { normal: false, swap: false };
+      selection[s.path].normal = turnOn;
+      if (!turnOn) selection[s.path].swap = false;   // 外すときは、逆向きの選択も外す
+    });
+    renderLibrary();
+  });
+  return btn;
+}
+
 function renderNode(node, container, depth) {
   node.folders.forEach(function (f) {
     const isClosed = closedFolders[f.key] === true;
 
-    const row = document.createElement('button');
-    row.className = 'w-full flex items-center text-left py-1.5 hover:bg-slate-50 focus:outline-none';
+    const row = document.createElement('div');
+    row.className = 'w-full flex items-center py-1.5 hover:bg-slate-50';
     row.style.paddingLeft = (depth * 12) + 'px';
+
+    const toggle = document.createElement('button');
+    toggle.className = 'flex-1 flex items-center text-left focus:outline-none';
 
     const mark = document.createElement('span');
     mark.className = 'w-4 text-slate-400';
@@ -144,12 +155,17 @@ function renderNode(node, container, depth) {
     name.className = 'font-bold text-slate-700';
     name.textContent = f.name;
 
-    row.appendChild(mark);
-    row.appendChild(name);
-    row.addEventListener('click', function () {
+    toggle.appendChild(mark);
+    toggle.appendChild(name);
+    toggle.addEventListener('click', function () {
       closedFolders[f.key] = !isClosed;
       renderLibrary();
     });
+
+    const box = makeFolderCheckbox(f);
+    box.classList.add('mr-2');
+    row.appendChild(box);
+    row.appendChild(toggle);
     container.appendChild(row);
 
     if (!isClosed) renderNode(f, container, depth + 1);
@@ -241,15 +257,11 @@ function renderNode(node, container, depth) {
 }
 
 function renderLibrary() {
-  renderTags();
-
-  const sets = visibleSets();
+  const sets = libraryIndex.sets;
   libraryTree.innerHTML = '';
 
   if (libraryIndex.sets.length === 0) {
     setTreeMessage('まだ問題集がありません。「問題集を追加」から登録してください。');
-  } else if (sets.length === 0) {
-    setTreeMessage('このタグに当てはまる問題集はありません。');
   } else {
     renderNode(buildTree(sets), libraryTree, 0);
   }
@@ -270,6 +282,7 @@ function updateSelectionUI() {
     ? '未選択'
     : (setCount + '冊 / ' + questionCount + '問を選択中');
   btnStartSelected.disabled = setCount === 0;
+  renderShortcuts();   // 選び直したとき、ショートカットの「変更あり」を更新する
 }
 
 // 答えを問題として出す「逆向き」の1問を作る。

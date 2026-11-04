@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=6.37.0">
+  <link rel="stylesheet" href="style.css?v=7.2.1">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -33,6 +33,13 @@
       </svg>
     </button>
     
+    <button id="btn-review-now" class="hidden w-10 h-10 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="いま開いている問題までを丸付けして、ホーム画面に戻る（残りは出題されません）">
+      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="3" width="14" height="18" rx="2" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+    </button>
+
     <div id="left-pen-toolbar" class="flex flex-col space-y-4 bg-white p-2 border border-black shadow-sm w-10 items-center">
       <div class="flex flex-col items-center space-y-1.5">
         <span class="text-[7px] font-bold uppercase tracking-wider text-slate-400">Color</span>
@@ -113,6 +120,13 @@
               </div>
             </div>
             <div class="flex items-center justify-between text-sm">
+              <span class="font-bold text-slate-700">記憶予測確率の上限</span>
+              <div class="flex items-center space-x-2">
+                <input type="number" id="input-max-probability" value="100" min="0" max="100" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="この確率以下の問題だけを出す（100 なら絞り込まない。未解答の問題は 0%）">
+                <span class="text-slate-400">% 以下</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between text-sm">
               <span class="font-bold text-slate-700">何問ずつに区切るか</span>
               <div class="flex items-center space-x-2">
                 <input type="number" id="input-group-size" value="0" min="0" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="区切る問題数">
@@ -133,7 +147,8 @@
               </div>
             </div>
 
-            <div id="library-tags" class="flex flex-wrap gap-1"></div>
+            <div id="library-shortcuts" class="flex flex-wrap items-center gap-1"></div>
+            <div id="shortcut-actions" class="flex flex-wrap items-center gap-3 text-xs"></div>
             <div id="library-tree" class="max-h-[28rem] overflow-y-auto border border-slate-200 p-2 text-sm">
               <p class="text-xs text-slate-400">読み込み中…</p>
             </div>
@@ -173,11 +188,15 @@
                 勉強時間
               </button>
               <span>・</span>
+              <button id="btn-show-trend" class="hover:text-black underline transition-colors focus:outline-none">
+                記憶の推移
+              </button>
+              <span>・</span>
               <button id="btn-open-settings-home" class="hover:text-black underline transition-colors focus:outline-none">
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v6.37.0</span>
+              <span class="cursor-default select-none font-mono">v7.2.1</span>
             </div>
           </div>
         </section>
@@ -199,12 +218,6 @@
               <input id="upload-path" type="text" placeholder="世界史/近代/フランス革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
               <span class="text-[10px] text-slate-400">スラッシュで区切ると階層になります</span>
               <div id="upload-path-preview" class="mt-1 text-[11px] text-slate-600 font-bold"></div>
-            </label>
-
-            <label class="block">
-              <span class="font-bold text-slate-700">タグ</span>
-              <input id="upload-tags" type="text" placeholder="世界史, 近代, 革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
-              <span class="text-[10px] text-slate-400">カンマ区切り。問題集ごとに付きます</span>
             </label>
 
             <div class="flex items-center justify-between">
@@ -261,7 +274,13 @@
             <h2 class="text-lg font-bold text-slate-800">問題集の管理</h2>
           </div>
           <div class="bg-white border border-black p-4 space-y-2">
-            <p class="text-[10px] text-slate-400">▲▼で、同じ階層の中の順番を入れ替えます（新しく追加した問題集は、いちばん下に並びます）。名前は、書き換えるとその場で保存されます。✎で問題や見出しを編集できます。</p>
+            <span class="text-sm font-bold text-slate-700">ショートカット</span>
+            <p class="text-[10px] text-slate-400">ホーム画面で問題集を選んで「この選択を保存」を押すと、ここに並びます。▲▼で順番を入れ替え、名前は書き換えると保存されます。中身を変えるときは、ホーム画面でショートカットを押し、選び直して「上書き」します。</p>
+            <div id="manage-shortcuts" class="text-sm"></div>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-2">
+            <p class="text-[10px] text-slate-400">▲▼で、同じ階層の中の順番を入れ替えます（新しく追加した問題集は、いちばん下に並びます）。問題集とフォルダの名前は、書き換えるとその場で保存されます（フォルダ名を変えると、中の問題集の場所もまとめて変わります）。「移動」で別のフォルダへ移せます。✎で問題や見出しを編集できます。</p>
             <div id="manage-tree" class="text-sm"></div>
           </div>
           <div id="manage-message" class="text-xs"></div>
@@ -286,11 +305,6 @@
               <span class="font-bold text-slate-700">名前</span>
               <input id="edit-title" type="text" class="mt-1 w-full p-2 border border-black focus:outline-none">
             </label>
-            <label class="block">
-              <span class="font-bold text-slate-700">タグ</span>
-              <input id="edit-tags" type="text" placeholder="世界史, 近代, 革命" class="mt-1 w-full p-2 border border-black focus:outline-none">
-              <span class="text-[10px] text-slate-400">カンマ区切り</span>
-            </label>
             <div class="flex items-center justify-between">
               <span class="font-bold text-slate-700">問題と答えを逆にすることを許可する</span>
               <label class="relative inline-flex items-center cursor-pointer shrink-0 ml-3">
@@ -312,6 +326,20 @@
               <span id="edit-count" class="text-[10px] text-slate-400"></span>
             </div>
             <p class="text-[10px] text-slate-400">問題文や答えを書き換えても、成績（正答率）は変わりません。リセットしたい問題だけ「成績リセット」を押してください。どちらも「保存する」を押すまで反映されません。</p>
+            <details id="edit-add-box" class="border border-slate-200 p-2">
+              <summary class="cursor-pointer font-bold text-slate-700">問題を追加</summary>
+              <div class="space-y-2 pt-2">
+                <select id="edit-add-heading" class="w-full p-2 border border-slate-300 text-xs focus:outline-none focus:border-black"></select>
+                <input id="edit-add-newheading" type="text" placeholder="新しい見出し" class="hidden w-full p-2 border border-slate-300 focus:outline-none focus:border-black">
+                <textarea id="edit-add-question" rows="2" placeholder="問題文" class="w-full p-2 border border-slate-300 text-sm focus:outline-none focus:border-black"></textarea>
+                <input id="edit-add-answer" type="text" placeholder="答え" class="w-full p-2 border border-slate-300 text-sm focus:outline-none focus:border-black">
+                <input id="edit-add-commentary" type="text" placeholder="解説（なくてもよい）" class="w-full p-2 border border-slate-300 text-xs focus:outline-none focus:border-black">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] text-slate-400">追加した問題は、「保存する」を押すまで反映されません。</span>
+                  <button id="btn-edit-add" class="px-4 py-2 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">追加</button>
+                </div>
+              </div>
+            </details>
             <input id="edit-search" type="text" placeholder="問題・答え・見出しで絞り込む" class="w-full p-2 border border-slate-300 focus:outline-none focus:border-black">
             <div id="edit-list"></div>
           </div>
@@ -321,6 +349,50 @@
             <button id="btn-edit-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>保存する</button>
           </div>
           <div id="edit-message" class="text-xs"></div>
+        </section>
+
+        <!-- 記憶の推移 -->
+        <section id="phase-trend" class="hidden space-y-4 pointer-events-auto w-full mx-auto my-auto max-w-3xl">
+          <div class="flex items-center space-x-3">
+            <button id="btn-trend-back" class="w-10 h-10 shrink-0 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="戻る">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h2 class="text-lg font-bold text-slate-800">記憶の推移</h2>
+          </div>
+
+          <div id="trend-tiles" class="grid grid-cols-3 gap-3"></div>
+
+          <div id="trend-range" class="flex items-center gap-1"></div>
+
+          <div class="bg-white border border-black p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-slate-700">問題数と合計知識量</span>
+              <span class="flex items-center gap-3 text-[10px] text-slate-500">
+                <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 bg-slate-900"></span>合計知識量</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 bg-slate-400"></span>問題数</span>
+              </span>
+            </div>
+            <div id="trend-chart-knowledge" class="relative"></div>
+          </div>
+
+          <div class="bg-white border border-black p-4 space-y-2">
+            <span class="text-sm font-bold text-slate-700">平均正答確率</span>
+            <div id="trend-chart-average" class="relative"></div>
+          </div>
+
+          <details class="bg-white border border-black p-4 text-xs">
+            <summary class="cursor-pointer font-bold text-slate-700">数値の表</summary>
+            <div id="trend-table" class="pt-2"></div>
+          </details>
+
+          <p class="text-[10px] text-slate-400 leading-relaxed">
+            1日1件です。過去の日は、その日の終わり（日付が切り替わる直前）の値で、次にアプリを開いたときに確定します（開かなかった日も、そのとき計算して埋めます）。今日の分は途中の値で、ホーム画面を開いたとき・解き終えて戻ったときに更新します。
+            <strong>合計知識量</strong>は、全問題集のすべての問題の「いま思い出せる確率」を足したもの（問題数 × 平均正答確率）で、
+            「いま思い出せる問題がだいたい何問か」を表します。まだ解いていない問題は 0% として数えます。逆向きの出題は含みません。
+          </p>
+          <div id="trend-message" class="text-xs"></div>
         </section>
 
         <!-- 勉強時間 -->
@@ -343,6 +415,11 @@
               <span class="text-sm font-bold text-slate-700">直近30日の合計</span>
               <span id="study-time-total" class="font-mono text-2xl font-bold text-slate-900">-</span>
             </div>
+          </div>
+          <div class="text-[10px] text-slate-400 space-y-1">
+            <div class="text-right">これまでに書いた線の長さ（目安）</div>
+            <div id="study-ink-list" class="space-y-1"></div>
+            <div id="study-ink-ruler" class="pt-1"></div>
           </div>
 
           <div class="bg-white border border-black p-4">
@@ -568,7 +645,7 @@
 
           <div class="bg-white border border-black p-4 space-y-3 text-xs text-slate-700 leading-relaxed">
             <h3 class="text-sm font-bold text-slate-900 border-b border-black pb-2 mb-2">3. 問題集の追加（CSV / JSON）</h3>
-            <p>ホーム画面の<strong>「問題集を追加」</strong>から、保存先（スラッシュで階層になります）・タグ・問題を入力します。問題は貼り付けるか、ファイルから読み込めます。ホーム画面に直接ファイルをドロップしても、この画面が開きます（1つずつ）。</p>
+            <p>ホーム画面の<strong>「問題集を追加」</strong>から、保存先（スラッシュで階層になります）・問題を入力します。問題は貼り付けるか、ファイルから読み込めます。ホーム画面に直接ファイルをドロップしても、この画面が開きます（1つずつ）。</p>
 
             <div class="pt-1">
               <p class="font-bold text-slate-800">CSV の場合</p>
@@ -662,6 +739,25 @@
 
   </div>
 
+  <!-- 問題集・フォルダの移動先を選ぶモーダル -->
+  <div id="move-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+    <div class="bg-white border border-black w-full max-w-md p-5 space-y-3 max-h-[85vh] flex flex-col">
+      <h3 id="move-title" class="text-base font-bold text-slate-900 border-b border-black pb-2"></h3>
+      <p class="text-[10px] text-slate-400">移動先のフォルダを選んでください。新しいフォルダを作って入れることもできます。</p>
+      <div id="move-list" class="flex-1 min-h-0 overflow-y-auto border border-slate-200 p-1 text-sm"></div>
+      <label class="block text-xs">
+        <span class="font-bold text-slate-700">選んだフォルダの中に、新しいフォルダを作って入れる（なくてもよい）</span>
+        <input id="move-newfolder" type="text" placeholder="新しいフォルダの名前" class="mt-1 w-full p-2 border border-slate-300 text-sm focus:outline-none focus:border-black">
+      </label>
+      <div id="move-preview" class="text-[11px] text-slate-600 font-bold break-words"></div>
+      <div id="move-message" class="text-xs"></div>
+      <div class="flex justify-end space-x-3">
+        <button id="btn-move-cancel" class="px-4 py-2 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">やめる</button>
+        <button id="btn-move-ok" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30" disabled>移動する</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 出題中に、いまの問題だけを書き換えるモーダル -->
   <div id="question-edit-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
     <div class="bg-white border border-black w-full max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
@@ -682,9 +778,12 @@
       </label>
       <p class="text-[10px] text-slate-400">成績（正答率）は変わりません。見出しの変更や、成績のリセットは、ホーム画面の「管理」から行えます。</p>
       <div id="qedit-message" class="text-xs"></div>
-      <div class="flex justify-end space-x-3">
+      <div class="flex items-center justify-between">
+        <button id="btn-qedit-delete" class="text-xs text-slate-400 hover:text-red-600 underline focus:outline-none">この問題を削除</button>
+        <div class="flex justify-end space-x-3">
         <button id="btn-qedit-cancel" class="px-4 py-2 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">やめる</button>
         <button id="btn-qedit-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30">保存する</button>
+        </div>
       </div>
     </div>
   </div>
@@ -735,7 +834,7 @@
           <div class="flex items-center justify-between pt-2">
             <span class="font-bold text-slate-700">背景の罫線</span>
             <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="check-ruled-lines" class="sr-only peer" checked>
+              <input type="checkbox" id="check-ruled-lines" class="sr-only peer">
               <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-black"></div>
             </label>
           </div>
@@ -773,18 +872,20 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=6.37.0"></script>
-  <script src="script/dom.js?v=6.37.0"></script>
-  <script src="script/util.js?v=6.37.0"></script>
-  <script src="script/memory.js?v=6.37.0"></script>
-  <script src="script/api.js?v=6.37.0"></script>
-  <script src="script/progress.js?v=6.37.0"></script>
-  <script src="script/studytime.js?v=6.37.0"></script>
-  <script src="script/canvas.js?v=6.37.0"></script>
-  <script src="script/quiz.js?v=6.37.0"></script>
-  <script src="script/library.js?v=6.37.0"></script>
-  <script src="script/upload.js?v=6.37.0"></script>
-  <script src="script/manage.js?v=6.37.0"></script>
-  <script src="script/app.js?v=6.37.0"></script>
+  <script src="script/state.js?v=7.2.1"></script>
+  <script src="script/dom.js?v=7.2.1"></script>
+  <script src="script/util.js?v=7.2.1"></script>
+  <script src="script/memory.js?v=7.2.1"></script>
+  <script src="script/api.js?v=7.2.1"></script>
+  <script src="script/progress.js?v=7.2.1"></script>
+  <script src="script/studytime.js?v=7.2.1"></script>
+  <script src="script/canvas.js?v=7.2.1"></script>
+  <script src="script/quiz.js?v=7.2.1"></script>
+  <script src="script/library.js?v=7.2.1"></script>
+  <script src="script/shortcuts.js?v=7.2.1"></script>
+  <script src="script/upload.js?v=7.2.1"></script>
+  <script src="script/manage.js?v=7.2.1"></script>
+  <script src="script/trend.js?v=7.2.1"></script>
+  <script src="script/app.js?v=7.2.1"></script>
 </body>
 </html>

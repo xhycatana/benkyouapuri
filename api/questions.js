@@ -4,13 +4,21 @@
 //   GET  /api/questions                -> 問題集の一覧（index.json）
 //   GET  /api/questions?path=世界史/…   -> 問題集1つの中身
 //   GET  /api/questions?rebuild=1      -> リポジトリを走査して一覧を作り直す
+//   GET  /api/questions?strip_tags=1   -> 問題集のファイルから、廃止したタグの項目を消す（一度だけ）
+//   GET  /api/questions?kind=shortcuts -> 選択のショートカット
 //   GET  /api/questions?kind=progress  -> 解答履歴の集計
 //   GET  /api/questions?kind=history&month=YYYY-MM -> 解答ログ（月ごと）
 //   GET  /api/questions?kind=studytime&month=YYYY-MM -> 勉強時間の記録（月ごと）
 //   GET  /api/questions?kind=studytimetotal -> 勉強時間の累計（全期間）
+//   GET  /api/questions?kind=ink       -> 書いた線の長さ（端末ごとの累計）
+//   GET  /api/questions?kind=snapshots -> 記憶の推移（日ごとの問題数・合計知識量）
 //   POST /api/questions                -> 問題集を保存する
+//   POST /api/questions {kind:'snapshot'}       -> 日ごとの問題数・合計知識量を保存する（同じ日は上書き。final の日は確定済み）
+//   POST /api/questions {kind:'ink'}            -> 書いた線の長さと画面サイズを、端末ごとに保存する
+//   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）
+//   POST /api/questions {kind:'shortcuts'}      -> 選択のショートカット一覧を保存する（まるごと置き換え）
 //   POST /api/questions {kind:'order'}          -> 一覧の並び順を保存する
-//   POST /api/questions {kind:'meta'}           -> 問題集の名前・タグ・逆向き許可だけを変える
+//   POST /api/questions {kind:'meta'}           -> 問題集の名前・逆向き許可だけを変える
 //   POST /api/questions {kind:'progress-reset'} -> 指定した問題の成績を消す
 //   DELETE /api/questions?path=…       -> 問題集を削除する
 //
@@ -122,7 +130,8 @@ async function writeIndex(index) {
 
 // リポジトリを走査して一覧を作り直す。
 // PC から直接ファイルを追加した場合など、一覧とずれたときに使う。
-async function rebuildIndex() {
+// リポジトリを走査して、問題集のファイル（sets/…json）の一覧を返す
+async function listSetFiles() {
   const repoInfo = await gh('https://api.github.com/repos/' + REPO);
   if (!repoInfo.ok) throw new Error('リポジトリ情報を取得できません (' + repoInfo.status + ')');
   const branch = (await repoInfo.json()).default_branch;
@@ -132,9 +141,31 @@ async function rebuildIndex() {
   if (!r.ok) throw new Error('ファイル一覧を取得できません (' + r.status + ')');
   const tree = await r.json();
 
-  const files = (tree.tree || []).filter(function (n) {
+  return (tree.tree || []).filter(function (n) {
     return n.type === 'blob' && n.path.startsWith(SETS_DIR + '/') && n.path.endsWith('.json');
   });
+}
+
+// 廃止したタグを、問題集のファイルから消す。消したあと、一覧も作り直す。一度だけ実行すればよい
+async function stripTags() {
+  const files = await listSetFiles();
+  let stripped = 0;
+  for (const n of files) {
+    const f = await readFile(n.path);
+    if (!f) continue;
+    let j;
+    try { j = JSON.parse(f.text); } catch (err) { continue; }
+    if (!Object.prototype.hasOwnProperty.call(j, 'tags')) continue;
+    delete j.tags;
+    await writeFile(n.path, JSON.stringify(j, null, 2), 'タグを削除: ' + n.path.slice(SETS_DIR.length + 1));
+    stripped++;
+  }
+  const index = await rebuildIndex();
+  return { stripped: stripped, count: index.sets.length };
+}
+
+async function rebuildIndex() {
+  const files = await listSetFiles();
 
   const sets = [];
   // 一度に大量のリクエストを投げないよう、少しずつ処理する
@@ -149,7 +180,6 @@ async function rebuildIndex() {
         return {
           path: rel,
           title: j.title || rel.split('/').pop(),
-          tags: Array.isArray(j.tags) ? j.tags : [],
           allowSwap: !!j.allowSwap,
           count: Array.isArray(j.questions) ? j.questions.length : 0,
           updated_at: j.updated_at || null
@@ -308,6 +338,205 @@ async function addStudyTimeTotal(addSeconds) {
   await writeFile(STUDY_TIME_TOTAL_FILE, JSON.stringify(saved, null, 2), '勉強時間の累計を更新');
 }
 
+// --- 階層の移動 ---
+// 問題集1つ、またはフォルダ（中の問題集すべて）を、別の場所へ移す。フォルダ名の変更も、これで行う。
+// 問題集のファイルを新しい場所に書き、古い場所を消す。成績は問題の id で持っているので、場所が変わっても影響しない。
+// 一覧（index.json）の場所と、ショートカットの場所も一緒に直す。
+// 1つずつ移すので、途中で失敗すると一部だけ移った状態になる（移せた分は一覧に反映する。一覧がずれたときは rebuild で直せる）。
+function dirOf(p) { return p.split('/').slice(0, -1).join('/'); }
+
+async function moveSets(from, to) {
+  if (from === to) return { status: 400, error: '移動先が、いまの場所と同じです。' };
+  const index = await readIndex();
+  const isSet = index.sets.some(function (s) { return s.path === from; });
+  const moving = isSet
+    ? index.sets.filter(function (s) { return s.path === from; })
+    : index.sets.filter(function (s) { return s.path.startsWith(from + '/'); });
+  if (moving.length === 0) return { status: 404, error: '見つかりません: ' + from };
+  if (!isSet && to.startsWith(from + '/')) return { status: 400, error: 'フォルダを、自分自身の中へは移せません。' };
+
+  const plan = moving.map(function (s) { return { oldPath: s.path, newPath: to + s.path.slice(from.length) }; });
+  const movingPaths = {};
+  plan.forEach(function (p) { movingPaths[p.oldPath] = true; });
+  const allPaths = index.sets.map(function (s) { return s.path; });
+
+  // 移した先で、同じ場所に問題集がある／問題集とフォルダの名前がぶつかるときは、何も移さない
+  for (const p of plan) {
+    const parts = p.newPath.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      const ancestor = parts.slice(0, i).join('/');
+      if (allPaths.indexOf(ancestor) !== -1 && !movingPaths[ancestor]) {
+        return { status: 409, error: '「' + ancestor + '」は問題集なので、その中へは移せません。' };
+      }
+    }
+    const clash = allPaths.some(function (q) { return !movingPaths[q] && (q === p.newPath || q.startsWith(p.newPath + '/')); });
+    if (clash || (await readFile(SETS_DIR + '/' + p.newPath + '.json'))) {
+      return { status: 409, error: '移動先に、同じ名前の問題集かフォルダがあります: ' + p.newPath };
+    }
+  }
+
+  const done = [];
+  let failure = null;
+  try {
+    for (const p of plan) {
+      const f = await readFile(SETS_DIR + '/' + p.oldPath + '.json');
+      if (!f) throw new Error('見つかりません: ' + p.oldPath);
+      const j = JSON.parse(f.text);
+      j.path = p.newPath;
+      await writeFile(SETS_DIR + '/' + p.newPath + '.json', JSON.stringify(j, null, 2), '移動: ' + p.oldPath + ' → ' + p.newPath);
+      // 新しい場所に書けてから、古い場所を消す（どの時点で止まっても、中身はどちらかに残る）
+      try {
+        await deleteFile(SETS_DIR + '/' + p.oldPath + '.json', '移動（元を削除）: ' + p.oldPath);
+      } catch (err) {
+        // 古い方を消せなかったので、書いた新しい方を取り消す（同じ問題集が2つ残らないように）
+        try {
+          await deleteFile(SETS_DIR + '/' + p.newPath + '.json', '移動を取り消し: ' + p.newPath);
+        } catch (err2) {
+          err.message += '。新しい場所「' + p.newPath + '」に複製が残っています。どちらか一方を消してください';
+        }
+        throw err;
+      }
+      done.push(p);
+    }
+  } catch (err) {
+    failure = err;
+  }
+
+  if (done.length > 0) {
+    try {
+      // 一覧: 移せた分の場所を直す。親のフォルダが変わるときは、移した先のいちばん下に並べる
+      const byOld = {};
+      done.forEach(function (p) { byOld[p.oldPath] = p.newPath; });
+      index.sets.forEach(function (s) { if (byOld[s.path]) s.path = byOld[s.path]; });
+      if (dirOf(from) !== dirOf(to)) {
+        const moved = index.sets.filter(function (s) { return done.some(function (p) { return p.newPath === s.path; }); });
+        index.sets = index.sets.filter(function (s) { return moved.indexOf(s) === -1; }).concat(moved);
+      }
+      await writeIndex(index);
+
+      // ショートカット: 中の場所も直す
+      const sc = await readShortcuts();
+      let changed = false;
+      sc.shortcuts.forEach(function (s) {
+        s.items.forEach(function (it) {
+          if (byOld[it.path]) { it.path = byOld[it.path]; changed = true; }
+        });
+      });
+      if (changed) {
+        await writeFile(SHORTCUT_FILE, JSON.stringify({ updated_at: new Date().toISOString(), shortcuts: sc.shortcuts }, null, 2), 'ショートカットの場所を更新');
+      }
+    } catch (err) {
+      // ファイルは移せているので、中身は無事。一覧やショートカットの更新だけが済んでいない
+      if (!failure) failure = new Error('問題集のファイルは移せましたが、一覧の更新に失敗しました: ' + (err.message || err));
+    }
+  }
+  if (failure) {
+    return { status: 500, error: String(failure.message || failure) + '（' + done.length + '件を移した後で止まりました。問題集の中身は消えていません。一覧がずれたときは、一覧の作り直しで直せます）', moved: done.length };
+  }
+  return { status: 200, moved: done.length };
+}
+
+// --- 選択のショートカット ---
+// 「期末範囲」のように、問題集の選び方（どの問題集を、そのまま／逆向きで選ぶか）に名前を付けて持つ。
+// 問題集の場所（パス）で持つ。問題集の場所を変えたときは、ここの場所も一緒に直す。
+const SHORTCUT_FILE = 'shortcuts.json';
+
+function sanitizeShortcuts(list) {
+  const out = [];
+  (Array.isArray(list) ? list : []).slice(0, 100).forEach(function (s) {
+    if (!s || typeof s !== 'object') return;
+    const id = (typeof s.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(s.id)) ? s.id : null;
+    const name = typeof s.name === 'string' ? s.name.trim().slice(0, 40) : '';
+    if (!id || !name) return;
+    const items = [];
+    (Array.isArray(s.items) ? s.items : []).slice(0, 1000).forEach(function (it) {
+      const path = it && cleanPath(it.path);
+      if (!path || !(it.normal || it.swap)) return;
+      items.push({ path: path, normal: !!it.normal, swap: !!it.swap });
+    });
+    out.push({ id: id, name: name, items: items });
+  });
+  return out;
+}
+
+async function readShortcuts() {
+  const f = await readFile(SHORTCUT_FILE);
+  if (!f) return { updated_at: null, shortcuts: [] };
+  try {
+    const j = JSON.parse(f.text);
+    return { updated_at: j.updated_at || null, shortcuts: sanitizeShortcuts(j.shortcuts) };
+  } catch (err) {
+    return { updated_at: null, shortcuts: [] };
+  }
+}
+
+// --- 記憶の推移（日ごとの記録） ---
+// 1日に1件。その日の問題数（全問題集の合計）と、合計知識量（全問題の「いま思い出せる確率」の合計）。
+// 平均正答確率は 合計知識量 ÷ 問題数 で出せるので、持たない。
+// 計算は、解答履歴とすべての問題集を見られる端末側（ブラウザ）で行い、ここでは受け取った値を日付ごとに置き換えて持つ。
+const SNAPSHOT_FILE = STUDY_TIME_DIR + '/memory.json';
+
+async function readSnapshots() {
+  const f = await readFile(SNAPSHOT_FILE);
+  if (!f) return { updated_at: null, entries: [] };
+  try {
+    const j = JSON.parse(f.text);
+    return { updated_at: j.updated_at || null, entries: Array.isArray(j.entries) ? j.entries : [] };
+  } catch (err) {
+    return { updated_at: null, entries: [] };
+  }
+}
+
+function sanitizeSnapshotEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const date = typeof e.date === 'string' ? e.date : '';
+  const total = Number(e.total);
+  const knowledge = Number(e.knowledge);
+  if (!DATE_RE.test(date) || !Number.isInteger(total) || total < 0 || total > 1e7 ||
+      !isFinite(knowledge) || knowledge < 0 || knowledge > total + 1e-6) return null;
+  const out = { date: date, total: total, knowledge: Math.round(knowledge * 100) / 100 };
+  if (e.final === true) out.final = true;
+  return out;
+}
+
+// --- 書いた線の長さ（画面上の長さ。ピクセル） ---
+// 足し込む方式だと、通信の応答を取りこぼして再送したときに二重に数えてしまう。
+// そこで、端末ごとに「その端末の累計」をそのまま上書きで送らせ（小さくならない方だけ採用）、
+// 端末ごとの値として持つ。端末をまたいでも、再送しても、値がずれない。
+// 実際の長さにするには画面の大きさが要るので、端末ごとに、本人が入れた画面サイズ（インチ）と、
+// そのときの画面の対角線のピクセル数（diag）も持つ。これが無い端末は、長さを出せない。
+const INK_FILE = STUDY_TIME_DIR + '/ink.json';
+const DEVICE_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+function normalizeInkDevice(v) {
+  if (typeof v === 'number') return { px: v > 0 ? v : 0, name: '', inch: null, diag: null };
+  const o = (v && typeof v === 'object') ? v : {};
+  const inch = Number(o.inch), diag = Number(o.diag);
+  const sized = inch > 0 && diag > 0;
+  return {
+    px: Number(o.px) > 0 ? Number(o.px) : 0,
+    name: typeof o.name === 'string' ? o.name : '',
+    inch: sized ? inch : null,
+    diag: sized ? diag : null
+  };
+}
+
+async function readInk() {
+  const f = await readFile(INK_FILE);
+  const devices = {};
+  let updated = null;
+  if (f) {
+    try {
+      const j = JSON.parse(f.text);
+      updated = j.updated_at || null;
+      Object.keys((j.devices && typeof j.devices === 'object') ? j.devices : {}).forEach(function (id) {
+        devices[id] = normalizeInkDevice(j.devices[id]);
+      });
+    } catch (err) {}
+  }
+  return { devices: devices, updated_at: updated };
+}
+
 async function readStudyTimeMonth(month) {
   const f = await readFile(studyTimeFile(month));
   if (!f) return { updated_at: null, entries: [] };
@@ -386,6 +615,26 @@ module.exports = async (req, res) => {
         return;
       }
 
+      if (req.query.kind === 'ink') {
+        res.status(200).json(await readInk());
+        return;
+      }
+
+      if (req.query.kind === 'shortcuts') {
+        res.status(200).json(await readShortcuts());
+        return;
+      }
+
+      if (req.query.strip_tags) {
+        res.status(200).json(await stripTags());
+        return;
+      }
+
+      if (req.query.kind === 'snapshots') {
+        res.status(200).json(await readSnapshots());
+        return;
+      }
+
       if (req.query.kind === 'studytimetotal') {
         res.status(200).json(await readStudyTimeTotal());
         return;
@@ -426,6 +675,72 @@ module.exports = async (req, res) => {
         return;
       }
 
+      // 記憶の推移。日ごとの問題数と合計知識量を、日付ごとに置き換えて保存する。
+      // 1件（{date, total, knowledge, final}）でも、まとめて（{entries: [...]}）でも送れる。
+      // final が true の日は「その日の終わりの値で確定済み」。確定済みの日を、確定していない値で上書きはしない
+      if (body.kind === 'snapshot') {
+        const incoming = (Array.isArray(body.entries) ? body.entries : [body]).slice(0, 400)
+          .map(sanitizeSnapshotEntry).filter(Boolean);
+        if (incoming.length === 0) {
+          res.status(400).json({ error: '記憶の推移の値が正しくありません。' });
+          return;
+        }
+        const current = await readSnapshots();
+        let changed = false;
+        incoming.forEach(function (e) {
+          const at = current.entries.findIndex(function (x) { return x.date === e.date; });
+          if (at >= 0) {
+            const ex = current.entries[at];
+            if (ex.final && !e.final) return;
+            if (ex.total === e.total && ex.knowledge === e.knowledge && !!ex.final === !!e.final) return;
+            current.entries[at] = e;
+          } else {
+            current.entries.push(e);
+          }
+          changed = true;
+        });
+        if (!changed) {
+          res.status(200).json({ saved: false });
+          return;
+        }
+        current.entries.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+        const saved = { updated_at: new Date().toISOString(), entries: current.entries };
+        await writeFile(SNAPSHOT_FILE, JSON.stringify(saved, null, 2), '記憶の推移を更新（' + incoming.length + '日分）');
+        res.status(200).json({ saved: true });
+        return;
+      }
+
+      // 書いた線の長さ。端末ごとの累計を受け取り、小さくならない方だけ採用する。
+      // 画面サイズ（inch・diag）は、送られたときに置き換える（null を送ると消す）
+      if (body.kind === 'ink') {
+        const device = typeof body.device === 'string' ? body.device : '';
+        const px = Number(body.px);
+        if (!DEVICE_RE.test(device) || !isFinite(px) || px < 0 || px > 1e12) {
+          res.status(400).json({ error: '線の長さの指定が正しくありません。' });
+          return;
+        }
+        const current = await readInk();
+        const prev = current.devices[device] || normalizeInkDevice(null);
+        const next = { px: Math.max(prev.px, Math.round(px)), name: prev.name, inch: prev.inch, diag: prev.diag };
+        if (typeof body.name === 'string') next.name = body.name.trim().slice(0, 40);
+        if (body.inch === null) {
+          next.inch = null;
+          next.diag = null;
+        } else if (Number(body.inch) >= 1 && Number(body.inch) <= 100 && Number(body.diag) >= 100 && Number(body.diag) <= 20000) {
+          next.inch = Number(body.inch);
+          next.diag = Math.round(Number(body.diag));
+        }
+        if (JSON.stringify(prev) === JSON.stringify(next)) {
+          res.status(200).json({ saved: false });
+          return;
+        }
+        current.devices[device] = next;
+        const saved = { devices: current.devices, updated_at: new Date().toISOString() };
+        await writeFile(INK_FILE, JSON.stringify(saved, null, 2), '書いた線の長さを更新');
+        res.status(200).json({ saved: true });
+        return;
+      }
+
       // 一覧の並び順の保存。渡された順に並べ、渡されなかった問題集は元の順のまま後ろに付ける
       if (body.kind === 'order') {
         const wanted = Array.isArray(body.paths) ? body.paths : [];
@@ -443,7 +758,29 @@ module.exports = async (req, res) => {
         return;
       }
 
-      // 問題集の名前・タグ・逆向き許可だけを変える（問題の中身には触れない）
+      // 問題集・フォルダの移動（フォルダ名の変更も同じ。from / to は、問題集やフォルダの「場所」）
+      if (body.kind === 'move') {
+        const from = cleanPath(body.from);
+        const to = cleanPath(body.to);
+        if (!from || !to) {
+          res.status(400).json({ error: '場所の指定が正しくありません。' });
+          return;
+        }
+        const r = await moveSets(from, to);
+        if (r.status === 200) res.status(200).json({ moved: r.moved, from: from, to: to });
+        else res.status(r.status).json({ error: r.error, moved: r.moved || 0 });
+        return;
+      }
+
+      // 選択のショートカット。一覧をまるごと置き換える（件数が少なく、同時に何人も書き換えるものではないため）
+      if (body.kind === 'shortcuts') {
+        const saved = { updated_at: new Date().toISOString(), shortcuts: sanitizeShortcuts(body.shortcuts) };
+        await writeFile(SHORTCUT_FILE, JSON.stringify(saved, null, 2), 'ショートカットを更新（' + saved.shortcuts.length + '件）');
+        res.status(200).json({ saved: true, count: saved.shortcuts.length });
+        return;
+      }
+
+      // 問題集の名前・逆向き許可だけを変える（問題の中身には触れない）
       if (body.kind === 'meta') {
         const path = cleanPath(body.path);
         if (!path) {
@@ -465,9 +802,7 @@ module.exports = async (req, res) => {
           }
           set.title = title;
         }
-        if (Array.isArray(body.tags)) {
-          set.tags = body.tags.map(function (x) { return String(x).trim(); }).filter(Boolean);
-        }
+        delete set.tags;   // 廃止したタグは、書き直すときに消す
         if (typeof body.allowSwap === 'boolean') set.allowSwap = body.allowSwap;
         set.updated_at = new Date().toISOString();
         await writeFile(file, JSON.stringify(set, null, 2), '設定を変更: ' + path);
@@ -476,7 +811,7 @@ module.exports = async (req, res) => {
         const at = index.sets.findIndex(function (s) { return s.path === path; });
         if (at >= 0) {
           index.sets[at].title = set.title;
-          index.sets[at].tags = Array.isArray(set.tags) ? set.tags : [];
+          delete index.sets[at].tags;
           index.sets[at].allowSwap = !!set.allowSwap;
           index.sets[at].updated_at = set.updated_at;
           await writeIndex(index);
@@ -586,14 +921,9 @@ module.exports = async (req, res) => {
         return;
       }
 
-      const tags = Array.isArray(body.tags)
-        ? body.tags.map(function (t) { return String(t).trim(); }).filter(Boolean)
-        : [];
-
       const set = {
         title: String(body.title || path.split('/').pop()).trim(),
         path: path,
-        tags: tags,
         allowSwap: !!body.allowSwap,
         updated_at: new Date().toISOString(),
         questions: questions
@@ -624,7 +954,7 @@ module.exports = async (req, res) => {
       // 一覧にも反映する
       const index = await readIndex();
       const entry = {
-        path: path, title: set.title, tags: tags, allowSwap: set.allowSwap,
+        path: path, title: set.title, allowSwap: set.allowSwap,
         count: questions.length, updated_at: set.updated_at
       };
       const at = index.sets.findIndex(function (s) { return s.path === path; });

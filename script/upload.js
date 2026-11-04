@@ -5,7 +5,6 @@
 // 前回の入力が残っていると、別の問題集を上書きしかねない。開くたびに空にする。
 function resetUploadForm() {
   uploadPath.value = '';
-  uploadTags.value = '';
   uploadAllowSwap.checked = false;
   uploadCsv.value = '';
   uploadMessage.textContent = '';
@@ -20,7 +19,6 @@ btnOpenUpload.addEventListener('click', function () {
 
 btnUploadSample.addEventListener('click', function () {
   uploadPath.value = 'サンプル/果物';
-  uploadTags.value = 'サンプル';
   uploadCsv.value = sampleQuestionsJSON.map(function (q) {
     return q.question + ',' + q.answer + ',' + q.commentary;
   }).join(String.fromCharCode(10));
@@ -99,7 +97,6 @@ async function saveUpload(overwrite) {
   const payload = {
     path: path,
     title: path.split('/').pop(),
-    tags: uploadTags.value.split(',').map(function (t) { return t.trim(); }).filter(Boolean),
     allowSwap: uploadAllowSwap.checked,
     questions: rows.map(function (r) {
       return { question: r.question, answer: r.answer, commentary: r.commentary };

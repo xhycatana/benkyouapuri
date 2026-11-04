@@ -20,7 +20,7 @@ function switchPhase(newPhase) {
   // 解答中は画面全体が手書きの領域なので、固定したままにする。
   // pointer-events も切り替えないと、指の動きがスクロールとして届かない。
   const scrollable = (newPhase === 'import' || newPhase === 'upload' || newPhase === 'help' || newPhase === 'studytime' ||
-                      newPhase === 'manage' || newPhase === 'edit');
+                      newPhase === 'manage' || newPhase === 'edit' || newPhase === 'trend');
   phaseContainer.classList.toggle('overflow-y-auto', scrollable);
   phaseContainer.classList.toggle('pointer-events-auto', scrollable);
   phaseContainer.classList.toggle('justify-center', !scrollable);
@@ -37,12 +37,14 @@ function switchPhase(newPhase) {
   phaseUpload.classList.add('hidden');
   phaseHelp.classList.add('hidden');
   phaseManage.classList.add('hidden');
+  phaseTrend.classList.add('hidden');
   phaseEdit.classList.add('hidden');
   phaseStudyTime.classList.add('hidden');
   phaseTest.classList.add('hidden');
   phaseReview.classList.add('hidden');
 
   if (newPhase === 'import') {
+    reviewEndsSession = false;
     phaseImport.classList.remove('hidden');
     fitHomeMargins();
     leftControlsContainer.classList.add('hidden');
@@ -51,10 +53,17 @@ function switchPhase(newPhase) {
     saveProgress();
     saveHistory();
     saveStudyTime();
+    saveInk();
+    scheduleSnapshot();   // 解き終えて戻ったときの状態を、その日の記録にする
   } else if (newPhase === 'upload') {
     phaseUpload.classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
     globalCanvas.clear();
+  } else if (newPhase === 'trend') {
+    phaseTrend.classList.remove('hidden');
+    leftControlsContainer.classList.add('hidden');
+    globalCanvas.clear();
+    renderTrendView();
   } else if (newPhase === 'manage' || newPhase === 'edit') {
     (newPhase === 'manage' ? phaseManage : phaseEdit).classList.remove('hidden');
     leftControlsContainer.classList.add('hidden');
@@ -72,10 +81,12 @@ function switchPhase(newPhase) {
   } else if (newPhase === 'test') {
     phaseTest.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
+    btnReviewNow.classList.remove('hidden');   // 出題中だけ、ここまでを丸付けするボタンを出す
     initTestPhase();
   } else if (newPhase === 'review') {
     phaseReview.classList.remove('hidden');
     leftControlsContainer.classList.remove('hidden');
+    btnReviewNow.classList.add('hidden');
     initReviewPhase();
   }
 }
@@ -161,12 +172,16 @@ function updateTaskProgress(mode) {
   }
 
   const currentGroupQuestions = studyGroups[currentGroupIndex] || [];
-  const N = currentGroupQuestions.length;
+  // 出題の途中で丸付けしているとき（reviewEndsSession）は、答えた分だけを全体として数える
+  const N = reviewEndsSession ? currentList.length : currentGroupQuestions.length;
   if (N === 0) return;
 
   const activeCurrent = currentIndex;
   const confirmedCount = N - currentList.length;
-  const confirmedPercent = (confirmedCount / N) * 100;
+  // 丸付け中は、この周で⭕にした問題も緑（確定）に数える。間違えた問題は、次の周で解き直すまで確定しない。
+  // ここまでに⭕にした数 ＝ 採点を終えた数 − 間違えた数
+  const gradedCorrect = (mode === 'review') ? Math.max(0, currentIndex - wrongQuestions.length) : 0;
+  const confirmedPercent = ((confirmedCount + gradedCorrect) / N) * 100;
   const currentPercent = ((confirmedCount + activeCurrent) / N) * 100;
 
   if (mode === 'test') {
@@ -212,6 +227,18 @@ function startLearning(problemData) {
     };
   });
 
+  // 「思い出せる確率の上限」。この確率以下の問題だけを出す（100 なら絞り込まない）。
+  // 未解答の問題は確率 0 なので、いつも含まれる。
+  const rawMax = parseFloat(inputMaxProbability.value);
+  const maxProbabilityPercent = Number.isFinite(rawMax) ? Math.min(100, Math.max(0, rawMax)) : 100;
+  if (maxProbabilityPercent < 100) {
+    originalList = originalList.filter(q => calculateProbability(q) * 100 <= maxProbabilityPercent);
+    if (originalList.length === 0) {
+      alert('記憶予測確率が ' + maxProbabilityPercent + '% 以下の問題がありません。上限を上げてください。');
+      return;
+    }
+  }
+
   // どの問題を出すかを決める
   if (shouldSrsSort) {
     originalList = sortQuestionsBySrs(originalList);
@@ -250,6 +277,8 @@ function startLearning(problemData) {
   wrongQuestions = [];
   answeredThisSession = {};
   multiAnswerProgress = {};
+  shownProbability = {};
+  reviewEndsSession = false;
 
   switchPhase('test');
 }
@@ -314,7 +343,7 @@ btnBackToImport.addEventListener('click', () => {
 // --- 見た目だけの設定（問題文の文字の大きさ・背景の罫線・1ページ/見開き） ---
 // 記憶モデル(memorySettings)とは別に持つ。
 const STORAGE_KEY_DISPLAY = 'flashmemo_displaySettings';
-let displaySettings = { questionFontSize: 24, showRuledLines: true, pageSpread: 1 };
+let displaySettings = { questionFontSize: 24, showRuledLines: false, pageSpread: 1 };
 
 try {
   const savedDisplay = JSON.parse(localStorage.getItem(STORAGE_KEY_DISPLAY) || 'null');
@@ -643,6 +672,7 @@ function showQuestion() {
 
   testQuestion.innerText = activeQuestion.question;
   const prob = calculateProbability(activeQuestion);
+  shownProbability[activeQuestion.id] = prob;
   testProbIndicator.innerText = `記憶予測確率: ${(prob * 100).toFixed(1)}%`;
   testAnswerCountHint.textContent = answerCountHintText(activeQuestion);
 
@@ -650,6 +680,26 @@ function showQuestion() {
   globalCanvas.resizeCanvas();
   resetAnswerPages(null);
 }
+
+// 出題の途中でやめるとき、ここまでの答えを丸付けして、成績に残す（解いた答えを無駄にしない）。
+// 押した時点で開いている問題までを、解いたものとして丸付けする。開いている問題が白紙でも、丸付けに含める。
+// 丸付けが終わったら、続きの出題や解き直しはせず、そのままホーム画面へ戻る（残りの問題は出題しない）。
+btnReviewNow.addEventListener('click', () => {
+  if (isTransitioning || currentPhase !== 'test') return;
+  const active = currentList[currentIndex];
+  if (!active) return;
+  const answered = currentIndex + 1;
+  const remaining = currentList.length - answered;
+  if (!confirm('いま開いている問題までの' + answered + '問を丸付けして、ホーム画面に戻ります。' +
+               (remaining > 0 ? String.fromCharCode(10) + '残りの' + remaining + '問は出題されません。' : '') +
+               String.fromCharCode(10) + 'よろしいですか。')) return;
+
+  userAnswers[active.id] = collectAnswerPages();   // 白紙のページは null のまま（丸付けでは白紙として見える）
+  currentIndex++;
+  currentList = currentList.slice(0, currentIndex);   // 開いている問題までを丸付けする
+  reviewEndsSession = true;
+  transitionPhase(() => switchPhase('review'));
+});
 
 btnClearTestCanvas.addEventListener('click', () => {
   if (isTransitioning) return; 
@@ -687,7 +737,9 @@ function showReviewItem() {
 
   reviewQuestion.innerText = activeQuestion.question;
   reviewAnswerCountHint.textContent = answerCountHintText(activeQuestion);
-  reviewProbIndicator.innerText = `記憶予測確率: ${(calculateProbability(activeQuestion) * 100).toFixed(1)}%`;
+  // 出題画面で見せた値をそのまま見せる。いま計算し直すと、解いている間に経過した時間のぶん変わってしまう
+  const probShown = (activeQuestion.id in shownProbability) ? shownProbability[activeQuestion.id] : calculateProbability(activeQuestion);
+  reviewProbIndicator.innerText = `記憶予測確率: ${(probShown * 100).toFixed(1)}%`;
 
   // 答えが「／」で複数に分かれている問題（例：英単語の意味を複数答える）は、
   // 1つずつ判定できるように、通常の一括表示とは別の見た目に切り替える。
@@ -734,9 +786,11 @@ function setReviewCorrectButtonsEnabled(enabled) {
   btnSelfCorrect.classList.toggle('opacity-30', !enabled);
   btnSelfCorrect.classList.toggle('pointer-events-none', !enabled);
   btnSelfCorrect.disabled = !enabled;
+  // 親の領域は pointer-events: none（下のキャンバスで書けるように）なので、押せる間だけボタン自身を auto にする
   reviewModelAnswerList.querySelectorAll('.answer-item-correct-btn').forEach((btn) => {
     btn.classList.toggle('opacity-30', !enabled);
     btn.classList.toggle('pointer-events-none', !enabled);
+    btn.classList.toggle('pointer-events-auto', enabled);
   });
 }
 
@@ -758,13 +812,13 @@ function renderAnswerItemRows(items) {
 
     const wrongBtn = document.createElement('button');
     wrongBtn.type = 'button';
-    wrongBtn.className = 'w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none';
+    wrongBtn.className = 'pointer-events-auto w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none';
     wrongBtn.title = '間違えた';
     wrongBtn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>';
 
     const correctBtn = document.createElement('button');
     correctBtn.type = 'button';
-    correctBtn.className = 'answer-item-correct-btn w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none ml-1';
+    correctBtn.className = 'answer-item-correct-btn pointer-events-auto w-8 h-8 flex items-center justify-center border border-black bg-white hover:bg-slate-50 focus:outline-none ml-1';
     correctBtn.title = '合ってた';
     correctBtn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="8" /></svg>';
 
@@ -925,6 +979,12 @@ function goToNextReviewItem() {
 // 20問やるつもりが最後にもう20問積まれることになり、
 // 空いた時間で区切って使うという目的と衝突するため取りやめた。
 function evaluateRoundResult() {
+  if (reviewEndsSession) {
+    // 出題の途中で丸付けしたので、ここで終わる（続きの出題も、間違えた問題の解き直しもしない）
+    reviewEndsSession = false;
+    transitionPhase(() => switchPhase('import'));
+    return;
+  }
   if (wrongQuestions.length > 0) {
     currentList = [...wrongQuestions];
     switchPhase('test');

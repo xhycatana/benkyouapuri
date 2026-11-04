@@ -257,7 +257,9 @@ class GlobalHandwritingCanvas {
   }
 
   extendStroke(pos) {
-    extendSmoothStroke(this.ctx, this.stroke, pos);
+    const s = this.stroke;
+    const fromX = s.lastX, fromY = s.lastY;
+    if (extendSmoothStroke(this.ctx, s, pos)) addInkLength(Math.hypot(pos.x - fromX, pos.y - fromY));
   }
 
   // ホーム画面に戻ったら解除する（ペンが使えなくなったときに指へ切り替える逃げ道）

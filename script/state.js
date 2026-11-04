@@ -12,6 +12,9 @@ let answerPages = [null];       // ページごとの画像（白紙は null。�
 let answerPageInked = [false];  // ページごとに何か書いたか
 let answerPageIndex = 0;        // 開いているページ
 let wrongQuestions = [];       // 間違えた問題リスト
+// 出題の途中で「丸付けへ」を押したとき true。ここまでの答えを丸付けしたら、続きの出題も解き直しもせず、ホーム画面へ戻る
+let reviewEndsSession = false;
+let shownProbability = {};     // 出題画面で見せた記憶予測確率（問題ID→確率）。丸付けでも同じ値を見せる（時間が経つと変わってしまうため）
 
 let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）
 
