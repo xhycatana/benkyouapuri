@@ -26,7 +26,7 @@ const penDiag = {
   list: null,
   status: null,
   folded: false,
-  move: null,       // まとめている途中の pointermove
+  runs: {},         // まとめている途中の行（レーンごと。pointermove と touchmove が交互に届いても、別々にまとめる）
   moveTimer: null,
   renderTimer: null,
   statusTimer: null,
@@ -40,7 +40,7 @@ function diagNow() { return performance.now(); }
 
 function diagPush(kind, text, atMs) {
   const t = (((atMs === undefined ? diagNow() : atMs) - penDiag.t0) / 1000).toFixed(3);
-  penDiag.lines.push({ t: t, kind: kind, text: text });
+  penDiag.lines.push({ t: t, ms: (atMs === undefined ? diagNow() : atMs), kind: kind, text: text });
   if (penDiag.lines.length > DIAG_MAX_LINES) penDiag.lines.splice(0, penDiag.lines.length - DIAG_MAX_LINES);
   diagScheduleRender();
 }
@@ -129,34 +129,40 @@ function diagOnClick(e) {
 }
 
 // 数が多いもの（pointermove・scroll・touchmove など）は、続けて届いたものを1行にまとめる。
-// key が変わるか、別の記録が来るか、250ms 何も来なければ、まとめて1行にする
-function diagRun(key, kind, label, tail) {
+// まとめるのは、レーン（lane）ごと。ペンの pointermove と touchmove のように、種類の違うものが交互に届いても、
+// 互いに邪魔をせず、それぞれ1行にまとまる（以前は交互に届くたびに行が分かれて、記録が長くなりすぎた）。
+// 同じレーンで key が変わるか、別の種類の記録が来るか、250ms 何も届かなければ、まとめて1行にする
+function diagRun(lane, key, kind, label, tail) {
   const now = diagNow();
-  const m = penDiag.move;
+  const m = penDiag.runs[lane];
   if (m && m.key === key) {
     m.n++;
     m.tail = tail;
   } else {
-    diagFlushMove();
-    penDiag.move = { key: key, kind: kind, label: label, n: 1, at: now, tail: tail };
+    diagFlushLane(lane);
+    penDiag.runs[lane] = { key: key, kind: kind, label: label, n: 1, at: now, tail: tail };
   }
   clearTimeout(penDiag.moveTimer);
   penDiag.moveTimer = setTimeout(diagFlushMove, 250);
 }
 
-function diagFlushMove() {
-  const m = penDiag.move;
+function diagFlushLane(lane) {
+  const m = penDiag.runs[lane];
   if (!m) return;
-  penDiag.move = null;
-  clearTimeout(penDiag.moveTimer);
+  delete penDiag.runs[lane];
   diagPush(m.kind, m.label + ' ×' + m.n + ' → ' + m.tail, m.at);
+}
+
+function diagFlushMove() {
+  clearTimeout(penDiag.moveTimer);
+  Object.keys(penDiag.runs).forEach(diagFlushLane);
 }
 
 // pointermove（触れている間＝移動、触れていない間＝ホバー）
 function diagOnMove(e) {
   const head = e.pointerType + '#' + e.pointerId;
   const moving = e.buttons > 0;
-  diagRun(head + '|' + (moving ? 'move' : 'hover'), diagKindOf(e.pointerType), (moving ? '…移動 ' : '…ホバー ') + head,
+  diagRun('ptr', head + '|' + (moving ? 'move' : 'hover'), diagKindOf(e.pointerType), (moving ? '…移動 ' : '…ホバー ') + head,
     '(' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ') ' + diagDescribe(e.target));
 }
 
@@ -173,19 +179,19 @@ function diagTouchText(e) {
 function diagOnOther(e) {
   if (diagInsidePanel(e.target)) return;
   const type = e.type;
-  if (type === 'touchmove') { diagRun('touchmove', 'touch', '…touchmove', diagTouchText(e)); return; }
+  if (type === 'touchmove') { diagRun('tch', 'touchmove', 'touch', '…touchmove', diagTouchText(e)); return; }
   if (type === 'scroll') {
     const tg = e.target;
-    diagRun('scroll|' + diagDescribe(tg), 'warn', '…スクロール',
+    diagRun('scroll', 'scroll|' + diagDescribe(tg), 'warn', '…スクロール',
       (tg === document || tg === window) ? ('window y=' + window.scrollY) : (diagDescribe(tg) + ' top=' + tg.scrollTop));
     return;
   }
   if (type === 'selectionchange') {
     const sel = window.getSelection ? window.getSelection() : null;
-    diagRun('selectionchange', 'warn', '…selectionchange', sel ? ('type=' + sel.type + ' 長さ=' + String(sel).length) : '?');
+    diagRun('sel', 'selectionchange', 'warn', '…selectionchange', sel ? ('type=' + sel.type + ' 長さ=' + String(sel).length) : '?');
     return;
   }
-  if (type === 'gesturechange') { diagRun('gesturechange', 'warn', '…gesturechange', 'scale=' + (e.scale || '?')); return; }
+  if (type === 'gesturechange') { diagRun('gest', 'gesturechange', 'warn', '…gesturechange', 'scale=' + (e.scale || '?')); return; }
   diagFlushMove();
   if (type === 'touchstart' || type === 'touchend' || type === 'touchcancel') {
     diagPush('touch', '◆' + type + ' ' + diagTouchText(e));
@@ -201,7 +207,7 @@ function diagOnOther(e) {
 // visualViewport（拡大・スクロールで動く、実際に見えている範囲）
 function diagOnViewport(e) {
   const vv = window.visualViewport;
-  diagRun('vv|' + e.type, 'warn', '…visualViewport ' + e.type,
+  diagRun('vv', 'vv|' + e.type, 'warn', '…visualViewport ' + e.type,
     'scale=' + vv.scale.toFixed(3) + ' offset=(' + vv.offsetLeft.toFixed(1) + ',' + vv.offsetTop.toFixed(1) + ') size=' + Math.round(vv.width) + '×' + Math.round(vv.height));
 }
 
@@ -306,7 +312,8 @@ function diagBuildPanel() {
 
   const head = document.createElement('div');
   head.style.cssText = 'padding:3px 4px;border-bottom:1px solid #cbd5e1;white-space:nowrap;overflow:hidden;';
-  head.appendChild(diagButton('コピー', diagCopy));
+  head.appendChild(diagButton('コピー', function () { diagCopy('near'); }));
+  head.appendChild(diagButton('全部', function () { diagCopy('all'); }));
   head.appendChild(diagButton('★失敗', function () {
     diagLog('mark', '★ 本人の印: いまの操作が失敗した（この直前の記録が、失敗した操作）');
     diagLog('mark', '★ 状態: ' + diagStateText());
@@ -359,17 +366,45 @@ function diagSetStatus(text) {
 }
 
 // --- コピー ---
-function diagText() {
-  return penDiag.lines.map(function (l) { return l.t + ' [' + l.kind + '] ' + l.text; }).join('\n');
+// 時刻順に並べた全行（まとめ行は、まとめ始めた時刻で並ぶ）
+function diagSortedLines() {
+  diagFlushMove();
+  return penDiag.lines.slice().sort(function (a, b) { return a.ms - b.ms; });
 }
 
-async function diagCopy() {
-  diagFlushMove();
-  const text = diagText();
-  const n = penDiag.lines.length;
+// 貼れる長さにするため、既定は「最後の★失敗の前6秒〜後1.5秒」と、先頭の端末情報だけ。★が無ければ、直近の40行。
+// mode が 'all' のときは、全部
+const DIAG_COPY_MAX_LINES = 120;
+function diagLinesFor(mode) {
+  const all = diagSortedLines();
+  if (mode === 'all') return all;
+  const env = all.filter(function (l) { return l.kind === 'env'; }).slice(0, 6);
+  let star = -1;
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (all[i].kind === 'mark' && all[i].text.indexOf('本人の印') >= 0) { star = i; break; }
+  }
+  let body;
+  if (star >= 0) {
+    const center = all[star].ms;
+    body = all.filter(function (l) { return l.kind !== 'env' && l.ms >= center - 6000 && l.ms <= center + 1500; });
+  } else {
+    body = all.filter(function (l) { return l.kind !== 'env'; }).slice(-40);
+  }
+  if (body.length > DIAG_COPY_MAX_LINES) body = body.slice(-DIAG_COPY_MAX_LINES);
+  return env.concat(body);
+}
+
+function diagText(mode) {
+  return diagLinesFor(mode).map(function (l) { return l.t + ' [' + l.kind + '] ' + l.text; }).join('\n');
+}
+
+async function diagCopy(mode) {
+  const lines = diagLinesFor(mode);
+  const text = lines.map(function (l) { return l.t + ' [' + l.kind + '] ' + l.text; }).join('\n');
+  const label = '✓ ' + lines.length + '行（' + text.length + '文字）をコピー';
   try {
     await navigator.clipboard.writeText(text);
-    diagSetStatus('✓ ' + n + '行をコピー');
+    diagSetStatus(label);
     return;
   } catch (err) {}
   // clipboard が使えないときの代わり
@@ -381,7 +416,7 @@ async function diagCopy() {
     ta.select();
     const ok = document.execCommand('copy');
     ta.remove();
-    diagSetStatus(ok ? ('✓ ' + n + '行をコピー') : 'コピーできませんでした');
+    diagSetStatus(ok ? label : 'コピーできませんでした');
   } catch (err) {
     diagSetStatus('コピーできませんでした');
   }
@@ -427,12 +462,16 @@ function expState() {
   return s;
 }
 
+let expCOn = false;   // 実験C（下の expCStart・expCEnd）がONか
+
 function expApply() {
   const s = expState();
   document.body.classList.toggle('exp-a', !!s.a);
   document.body.classList.toggle('exp-b', !!s.b);
+  expCOn = !!s.c;
   if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.checked = !!s.a;
   if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.checked = !!s.b;
+  if (typeof checkExpC !== 'undefined' && checkExpC) checkExpC.checked = !!s.c;
 }
 
 function expSet(name, on) {
@@ -440,16 +479,50 @@ function expSet(name, on) {
   s[name] = !!on;
   try { localStorage.setItem(STORAGE_KEY_EXP, JSON.stringify(s)); } catch (err) {}
   expApply();
-  diagLog('env', '実験 ' + name.toUpperCase() + ' を ' + (on ? 'ON' : 'OFF') + ' にした（いま A=' + !!s.a + ' B=' + !!s.b + '）');
+  diagLog('env', '実験 ' + name.toUpperCase() + ' を ' + (on ? 'ON' : 'OFF') + ' にした（いま A=' + !!s.a + ' B=' + !!s.b + ' C=' + !!s.c + '）');
 }
 
 function expText() {
   const s = expState();
-  return '実験 A=' + !!s.a + ' B=' + !!s.b;
+  return '実験 A=' + !!s.a + ' B=' + !!s.b + ' C=' + !!s.c;
 }
+
+// 実験C: 出題・丸付け中のボタンの touchstart を、キャンバスと同じようにページ側で止める（preventDefault）。
+// 止めると、click が作られなくなるので、指やペンが離れたときに「ほとんど動かさず、ボタンの上で離した」ことを確かめて、
+// 自分で click() を呼ぶ。キャンバスと同じ「この触れ方はページが引き受ける」やり方で、iPad の側の判定を始めさせないための実験
+const EXP_C_SELECTOR = '#left-controls-container button, #phase-test button, #phase-review button, #app-header button';
+let expCTouch = null;
+
+function expCStart(e) {
+  if (!expCOn || !e.target || !e.target.closest) return;
+  const btn = e.target.closest(EXP_C_SELECTOR);
+  if (!btn || btn.disabled || !isDrawingPhase() || e.touches.length !== 1) return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  expCTouch = { btn: btn, id: t.identifier, x: t.clientX, y: t.clientY };
+}
+
+function expCEnd(e) {
+  const s = expCTouch;
+  if (!s) return;
+  const t = Array.prototype.find.call(e.changedTouches, function (x) { return x.identifier === s.id; });
+  if (!t) return;
+  expCTouch = null;
+  if (e.type === 'touchcancel') { diagLog('warn', '実験C: touchcancel（押した扱いにしない）'); return; }
+  const r = s.btn.getBoundingClientRect();
+  const inside = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+  const moved = Math.hypot(t.clientX - s.x, t.clientY - s.y);
+  diagLog('app', '実験C: touchend → ' + (inside && moved <= 12 ? 'ボタンを押した扱い' : '押した扱いにしない（inside=' + inside + ' 動き=' + Math.round(moved) + 'px）') + ' → ' + diagDescribe(s.btn));
+  if (inside && moved <= 12) s.btn.click();
+}
+
+document.addEventListener('touchstart', expCStart, { capture: true, passive: false });
+document.addEventListener('touchend', expCEnd, { capture: true });
+document.addEventListener('touchcancel', expCEnd, { capture: true });
 
 document.addEventListener('DOMContentLoaded', function () {
   expApply();
   if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.addEventListener('change', function () { expSet('a', checkExpA.checked); });
   if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.addEventListener('change', function () { expSet('b', checkExpB.checked); });
+  if (typeof checkExpC !== 'undefined' && checkExpC) checkExpC.addEventListener('change', function () { expSet('c', checkExpC.checked); });
 });

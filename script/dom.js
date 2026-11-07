@@ -96,6 +96,7 @@ const checkRuledLines = document.getElementById('check-ruled-lines');
 const checkDiag = document.getElementById('check-diag');
 const checkExpA = document.getElementById('check-exp-a');
 const checkExpB = document.getElementById('check-exp-b');
+const checkExpC = document.getElementById('check-exp-c');
 
 const btnUseSample = document.getElementById('btn-use-sample');
 const btnUseSampleKanji = document.getElementById('btn-use-sample-kanji');
