@@ -67,14 +67,23 @@ async function ensureQuestionIds() {
 }
 
 // stats: 成績（問題ID → { last_answered_at, lifespan, … }）。atMs: 何時の時点の値か（省略するといま）
+// 「問題と答えを逆にすることを許可」した問題集は、逆向きの問題（id の末尾が ":swap"）も、別の1問として数える。
+// 逆向きを覚えていることと、順向きを覚えていることは別なので、成績も別（stats[id + ':swap']）。
 function computeSnapshot(byPath, stats, atMs) {
+  const swappable = {};
+  libraryIndex.sets.forEach(function (s) { if (s.allowSwap) swappable[s.path] = true; });
+
   let total = 0, knowledge = 0;
+  const count = function (id) {
+    total++;
+    const st = stats[id];
+    // 解いたことのない問題は 0。calculateProbability が読むのは、この2つだけ
+    if (st) knowledge += calculateProbability({ last_answered_at: st.last_answered_at, lifespan: st.lifespan }, atMs);
+  };
   Object.keys(byPath).forEach(function (path) {
     byPath[path].ids.forEach(function (id) {
-      total++;
-      const st = stats[id];
-      // 解いたことのない問題は 0。calculateProbability が読むのは、この2つだけ
-      if (st) knowledge += calculateProbability({ last_answered_at: st.last_answered_at, lifespan: st.lifespan }, atMs);
+      count(id);
+      if (swappable[path]) count(id + ':swap');
     });
   });
   return { total: total, knowledge: knowledge };

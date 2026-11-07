@@ -55,24 +55,39 @@ function calculateProbability(q, atMs) {
   return Math.min(Math.max(r, 0), 1);
 }
 
-function sortQuestionsBySrs(list) {
-  // 同じ確率どうし（特に、まだ解いていない問題はすべて確率0）は無作為な順にする。
-  // 並べ替えは同点なら元の順を保つので、先に混ぜておかないと、上限で切ったときに
-  // 新しい問題集では毎回、先頭から同じ問題ばかりが選ばれてしまう。
-  // 確率の違う問題どうしの順は、混ぜても並べ替えで元に戻るので影響しない。
-  // 並べ替えには確率そのものではなく、その対数を使う。ひどく忘れた問題（寿命が短いまま長く放置した問題）は
-  // 確率が 0 に潰れて区別できなくなり、同点扱いで無作為に選ばれてしまうため。
-  // 未解答は -Infinity なので、一度も解いていない問題どうしだけが同点になる。
-  const scored = shuffleArray(list.slice()).map(q => ({
+// limit は出題する上限（0 なら上限なし）。
+// 同じ確率どうし（特に、まだ解いていない問題はすべて確率0）は、元の順のまま並べる。
+// 順番を混ぜるのは、上限で切る位置に同じ確率の問題が並んでいて、どれを残すかを決めるときだけ。
+// そこで元の順のまま切ると、新しい問題集では毎回、先頭から同じ問題ばかりが選ばれてしまう。
+// 残す問題を無作為に選んだあとも、その中は元の順に戻す（「ランダムにする」を選んでいないときは、元の順で出すため）。
+// 並べ替えには確率そのものではなく、その対数を使う。ひどく忘れた問題（寿命が短いまま長く放置した問題）は
+// 確率が 0 に潰れて区別できなくなり、同点扱いで無作為に選ばれてしまうため。
+// 未解答は -Infinity なので、一度も解いていない問題どうしだけが同点になる。
+function sortQuestionsBySrs(list, limit) {
+  const scored = list.map((q, i) => ({
     item: q,
+    order: i,
     prob: forgettingExponent(q)
   }));
 
-  // 思い出せる確率が低い順に並べる。
+  // 思い出せる確率が低い順に並べる。同じ確率なら元の順（order）。
   // 直前に解いた問題は経過時間がほぼ0なので確率がほぼ100%になり、自然に後ろへ回る。
   // かつては「時間ロック」で明示的に締め出していたが、それは正解数を足し込む
   // 旧アルゴリズムのための対策だった。忘却曲線に置き換えた時点で不要になったので廃止した。
-  scored.sort((a, b) => (a.prob < b.prob ? -1 : a.prob > b.prob ? 1 : 0));   // -Infinity どうしの引き算は NaN になるので使わない
+  scored.sort((a, b) => (a.prob < b.prob ? -1 : a.prob > b.prob ? 1 : a.order - b.order));   // -Infinity どうしの引き算は NaN になるので使わない
+
+  if (limit > 0 && scored.length > limit) {
+    const edge = scored[limit - 1].prob;
+    let lo = limit - 1;
+    while (lo > 0 && scored[lo - 1].prob === edge) lo--;
+    let hi = limit;
+    while (hi < scored.length && scored[hi].prob === edge) hi++;
+    if (hi > limit) {
+      // 切り位置をまたいで、同じ確率の問題が並んでいる。残す分を無作為に選び、その中は元の順に戻す
+      const kept = shuffleArray(scored.slice(lo, hi)).slice(0, limit - lo).sort((a, b) => a.order - b.order);
+      return scored.slice(0, lo).concat(kept).map(s => s.item);
+    }
+  }
 
   return scored.map(s => s.item);
 }

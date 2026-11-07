@@ -125,6 +125,24 @@ function setTreeMessageNoPassphrase() {
   libraryTree.appendChild(btn);
 }
 
+// 一覧の控え（端末）。起動直後は、通信の結果を待たずに、前回の一覧をすぐ見せるために使う。
+// モバイル通信では、一覧を取るだけで数秒かかることがあるため。通信が済んだら、新しい一覧に置き換える。
+const STORAGE_KEY_LIBRARY_INDEX = 'flashmemo_library_index';
+
+function readLibraryCache() {
+  try {
+    const j = JSON.parse(localStorage.getItem(STORAGE_KEY_LIBRARY_INDEX) || 'null');
+    return (j && Array.isArray(j.sets) && j.sets.length > 0) ? j : null;
+  } catch (err) { return null; }
+}
+
+function writeLibraryCache() {
+  try { localStorage.setItem(STORAGE_KEY_LIBRARY_INDEX, JSON.stringify(libraryIndex)); } catch (err) {}
+}
+
+// 成績の読み込み（通信中のもの）。成績が要るのは、解き始めるときと、記憶の推移を計算するときだけ
+let progressLoading = null;
+
 // silent が true のときは、起動直後の自動読み込みなので、入力欄を勝手に出さない。
 // 「再読み込み」を押すなど、本人が明示的に操作したときだけ自動で聞く。
 async function loadLibrary(silent) {
@@ -133,11 +151,23 @@ async function loadLibrary(silent) {
     if (!silent) askPassphrase('');
     return;
   }
-  setTreeMessage('読み込み中…');
+
+  // 起動直後は、前回の一覧があればすぐ見せる（管理での書き換えや削除のあとの読み直しでは、古い一覧を出さない）
+  const cached = silent ? readLibraryCache() : null;
+  if (cached) {
+    libraryIndex = cached;
+    renderLibrary();
+  } else {
+    setTreeMessage('読み込み中…');
+  }
+
   try {
+    // 一覧・成績・ショートカットは、互いに待たずに、同時に取りにいく
+    progressLoading = loadProgress();
+    const shortcutsLoading = loadShortcuts();
     const data = await api('/api/questions');
     libraryIndex = (data && Array.isArray(data.sets)) ? data : { sets: [] };
-    await loadProgress();
+    writeLibraryCache();
     // 無くなった問題集の選択は捨て、許可が外れた問題集の「逆」選択も外す
     Object.keys(selection).forEach(function (p) {
       const set = libraryIndex.sets.find(function (s) { return s.path === p; });
@@ -145,8 +175,9 @@ async function loadLibrary(silent) {
       if (!set.allowSwap) selection[p].swap = false;
     });
     renderLibrary();
+    await progressLoading;   // 過去の日の値の確定には、成績が要る
     startupSnapshots();   // 開かなかった日も含めて、過去の日の値を確定させる
-    loadShortcuts();
+    await shortcutsLoading;
   } catch (err) {
     if (!err.unauthorized) setTreeMessage(err.message, true);
   }
@@ -403,10 +434,16 @@ async function startFromSelection() {
   btnStartSelected.disabled = true;
   btnStartSelected.textContent = '読み込み中…';
   try {
+    if (progressLoading) await progressLoading;   // 成績がまだ届いていなければ待つ（出題の優先順位に使うため）
+    // 問題集は、順番に待たずに、まとめて同時に取りにいく
+    const sets = await Promise.all(paths.map(function (p) {
+      return api('/api/questions?path=' + encodeURIComponent(p));
+    }));
     let merged = [];
-    for (const p of paths) {
+    for (let i = 0; i < paths.length; i++) {
+      const p = paths[i];
       const sel = selection[p];
-      const set = await api('/api/questions?path=' + encodeURIComponent(p));
+      const set = sets[i];
       if (!Array.isArray(set.questions)) continue;
       // 出題中に問題を書き換えられるよう、どの問題集の問題かを持たせる（逆向きは書き換えの対象外）
       if (sel.normal) merged = merged.concat(set.questions.map(function (q) {

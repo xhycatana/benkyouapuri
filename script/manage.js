@@ -623,6 +623,10 @@ async function saveEdit() {
 
 btnEditSave.addEventListener('click', saveEdit);
 
+// 一番上・一番下へ、アニメーションなしで一瞬で移る（スクロールする箱は phaseContainer）
+btnEditScrollTop.addEventListener('click', function () { phaseContainer.scrollTop = 0; });
+btnEditScrollBottom.addEventListener('click', function () { phaseContainer.scrollTop = phaseContainer.scrollHeight; });
+
 btnEditBack.addEventListener('click', function () {
   if (editDirty && !confirm('保存していない変更があります。破棄して戻りますか。')) return;
   editState = null;
@@ -918,15 +922,14 @@ function remapPathKeys(from, to) {
   });
 }
 
-// 移動中の表示。入力の見た目を、進捗（何冊中何冊目、棒、いま移している名前、経過時間）に切り替える
+// 移動中の表示。入力の見た目を、「移動中」の表示（経過時間つき）に切り替える
 let moveProgressTimer = null;
 
 function openMoveProgress(title) {
   moveTitle.textContent = title;
   moveForm.style.display = 'none';
   moveProgress.classList.remove('hidden');
-  moveProgressText.textContent = '準備中…';
-  moveProgressBar.style.width = '0%';
+  moveProgressText.textContent = '移動中…';
   moveProgressCurrent.textContent = '';
   moveModal.classList.remove('hidden');
   const started = Date.now();
@@ -936,18 +939,13 @@ function openMoveProgress(title) {
   };
   tick();
   clearInterval(moveProgressTimer);
-  moveProgressTimer = setInterval(tick, 1000);   // 1冊を移す間も、動いていると分かるように
+  moveProgressTimer = setInterval(tick, 1000);   // 動いていると分かるように
 }
 
-function updateMoveProgress(done, total, currentName) {
-  moveProgressText.textContent = total > 0 ? (done + ' / ' + total + ' 冊') : '準備中…';
-  moveProgressBar.style.width = (total > 0 ? Math.round(done / total * 100) : 0) + '%';
-  moveProgressCurrent.textContent = currentName ? ('移動中：' + currentName) : '';
-}
-
-// 100%になったあとの、仕上げ（一覧と成績を読み直す）の間の表示。何も出ないと、止まったように見えるため
+// 移し終えたあとの、仕上げ（一覧と成績を読み直す）の間の表示。何も出ないと、止まったように見えるため
 function showMoveFinishing() {
-  moveProgressCurrent.textContent = '仕上げ中…（一覧と成績を読み直しています。もう少しお待ちください）';
+  moveProgressText.textContent = '仕上げ中…';
+  moveProgressCurrent.textContent = '一覧と成績を読み直しています。';
 }
 
 function closeMoveProgress() {
@@ -960,44 +958,30 @@ function closeMoveProgress() {
 }
 
 // 移動の実行。from の場所にあるものを to へ。成功したら true
-// 移す問題集の一覧と衝突の確認を先にサーバーで行い（何も書かない）、そのあと1冊ずつ移す。
-// 1回の依頼を小さくするので、冊数が多くても、途中の様子が見える（サーバーの処理時間の上限にもかかりにくい）。
+// 問題集のファイルの付け替え・一覧・ショートカットの書き換えを、サーバーが1回のコミットでまとめて行う。
+// 途中まで移ることはない（失敗したら、何も移っていない）。
 async function runMove(from, to, title) {
   await saveOrderNow();   // 保存待ちの並び順を先に送る（移動で一覧が書き換わるため）
   openMoveProgress(title || '移動中');
-  let done = 0, total = 0;
   try {
-    const dry = await enqueueManage(function () { return postJSON({ kind: 'move', from: from, to: to, dryRun: true }); });
-    const plan = dry.plan || [];
-    total = plan.length;
     const keepOrder = pathDir(from) === pathDir(to);   // フォルダ名の変更のように、親が変わらないときは並びを保つ
-    updateMoveProgress(0, total, '');
-    for (const step of plan) {
-      updateMoveProgress(done, total, step.from.split('/').join('  >  '));
-      await enqueueManage(function () {
-        return postJSON({ kind: 'move', from: step.from, to: step.to, keepOrder: keepOrder });
-      });
-      remapPathKeys(step.from, step.to);   // 移せた問題集から、選択の場所を付け替える
-      done++;
-    }
-    updateMoveProgress(done, total, '');
+    const r = await enqueueManage(function () {
+      return postJSON({ kind: 'move', from: from, to: to, keepOrder: keepOrder });
+    });
     showMoveFinishing();
-    remapPathKeys(from, to);
+    remapPathKeys(from, to);   // 選択・フォルダの開閉を、新しい場所へ付け替える
     await loadLibrary();
     renderManage();
     closeMoveProgress();
-    setMessage(manageMessage, '移動しました（' + done + '冊）。', 'ok');
+    setMessage(manageMessage, '移動しました（' + (r.moved || 0) + '冊）。', 'ok');
     return true;
   } catch (err) {
     closeMoveProgress();
     if (err.unauthorized) return false;
-    // 途中まで移っていることがあるので、一覧を読み直して、実際の状態を見せる
-    await loadLibrary();
+    await loadLibrary();   // 実際の状態を読み直して見せる（通信が途中で切れたときも、移っているかどうかが分かる）
     renderManage();
-    // サーバーの「N件を移した後で…」の末尾は、1冊ずつ移す今は意味が違うので、画面の側の言い方に揃える
-    const reason = String(err.message).replace(/（\d+件を移した後で止まりました。[^）]*）$/, '');
-    setMessage(manageMessage, (total > 0 ? (done + ' / ' + total + ' 冊を移したところで止まりました: ') : '移動できませんでした: ') + reason +
-      (done > 0 ? '（移せた分は新しい場所にあります。残りは、もう一度同じ移動をすると続きから移せます）' : ''), 'error');
+    setMessage(manageMessage, '移動できませんでした: ' + err.message +
+      '（まとめて1回で行うので、途中まで移ることはありません。いまの一覧を読み直しました）', 'error');
     return false;
   }
 }

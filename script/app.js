@@ -33,13 +33,18 @@ btnResetZoom.addEventListener('click', function () {
 });
 
 
+// 通信は、ページの読み込み（外部の CSS・スクリプトの到着）を待たずに、HTML の読み込みが済んだ時点で始める。
+// モバイル通信では、外部の読み込みが終わるまでに数秒かかることがあり、その間も通信を待たせないため。
+document.addEventListener('DOMContentLoaded', function () {
+  loadLibrary(true);   // 起動直後は、合言葉が無くても勝手に入力欄を出さない
+  loadHistoryPending();
+  loadStudyTimePending();
+});
+
 window.onload = function() {
   switchPhase('import');
   globalCanvas.resizeCanvas();
   applyMemorySettingsToUI();
   applyDisplaySettingsToUI();
   watchZoom();
-  loadLibrary(true);   // 起動直後は、合言葉が無くても勝手に入力欄を出さない
-  loadHistoryPending();
-  loadStudyTimePending();
 };

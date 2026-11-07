@@ -249,7 +249,7 @@ function startLearning(problemData) {
 
   // どの問題を出すかを決める
   if (shouldSrsSort) {
-    originalList = sortQuestionsBySrs(originalList);
+    originalList = sortQuestionsBySrs(originalList, settingQuestionLimit);
   } else if (shouldShuffle) {
     // 優先選出を使わない場合は、どれを選ぶかをここで無作為にする
     originalList = shuffleArray(originalList);
@@ -345,6 +345,8 @@ btnCloseSettings.addEventListener('click', () => settingsModal.classList.add('hi
 // --- 戻る ---
 btnBackToImport.addEventListener('click', () => {
   if (isTransitioning) return;
+  // 押し間違えて、解いた答えを失わないように確認する（出題中・丸付け中のどちらでも）
+  if (!confirm('ホーム画面に戻ります。まだ丸付けしていない答えは、消えます。' + String.fromCharCode(10) + 'よろしいですか。')) return;
   transitionPhase(() => switchPhase('import'));
 });
 
@@ -709,8 +711,9 @@ btnReviewNow.addEventListener('click', () => {
   transitionPhase(() => switchPhase('review'));
 });
 
-btnClearTestCanvas.addEventListener('click', () => {
-  if (isTransitioning) return; 
+// 消去は、click ではなく「タップした」で実行する（click が遅れて届くと、消したあとに書き始めた1画目が消えるため。onTap を参照）
+onTap(btnClearTestCanvas, () => {
+  if (isTransitioning) return;
   clearCurrentAnswerPage();
 });
 
@@ -838,18 +841,22 @@ function renderAnswerItemRows(items) {
       correctBtn.classList.toggle('border-green-500', r === true);
     }
 
-    wrongBtn.addEventListener('click', () => {
+    // 素早く続けて押しても取りこぼさないよう、click ではなく「タップした」で判定する（onTap を参照）。
+    // iPad では、続けて押したときや、押した指が少し動いたときに、click が発生しないことがある。
+    const markWrong = () => {
       if (isTransitioning) return;
       currentAnswerItemResults[index] = false;
       refreshRowStyle();
       updateReviewNextButtonReadiness();
-    });
-    correctBtn.addEventListener('click', () => {
+    };
+    const markCorrect = () => {
       if (isTransitioning || correctBtn.classList.contains('pointer-events-none')) return;
       currentAnswerItemResults[index] = true;
       refreshRowStyle();
       updateReviewNextButtonReadiness();
-    });
+    };
+    onTap(wrongBtn, markWrong);
+    onTap(correctBtn, markCorrect);
 
     refreshRowStyle();
 
@@ -964,7 +971,7 @@ btnReviewNext.addEventListener('click', () => {
   finalizeReviewItem(allCorrect);
 });
 
-btnClearReviewCanvas.addEventListener('click', () => {
+onTap(btnClearReviewCanvas, () => {
   if (isTransitioning) return;
   clearCurrentAnswerPage();
 });

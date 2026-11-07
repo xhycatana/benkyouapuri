@@ -33,7 +33,6 @@ const moveForm = document.getElementById('move-form');
 const moveProgress = document.getElementById('move-progress');
 const moveProgressText = document.getElementById('move-progress-text');
 const moveProgressElapsed = document.getElementById('move-progress-elapsed');
-const moveProgressBar = document.getElementById('move-progress-bar');
 const moveProgressCurrent = document.getElementById('move-progress-current');
 const moveList = document.getElementById('move-list');
 const moveNewFolder = document.getElementById('move-newfolder');
@@ -45,6 +44,8 @@ const manageTree = document.getElementById('manage-tree');
 const manageMessage = document.getElementById('manage-message');
 
 const btnEditBack = document.getElementById('btn-edit-back');
+const btnEditScrollTop = document.getElementById('btn-edit-scroll-top');
+const btnEditScrollBottom = document.getElementById('btn-edit-scroll-bottom');
 const editSubtitle = document.getElementById('edit-subtitle');
 const editTitle = document.getElementById('edit-title');
 const editAllowSwap = document.getElementById('edit-allow-swap');

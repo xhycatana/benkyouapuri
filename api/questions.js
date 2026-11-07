@@ -15,7 +15,7 @@
 //   POST /api/questions                -> 問題集を保存する
 //   POST /api/questions {kind:'snapshot'}       -> 日ごとの問題数・合計知識量を保存する（同じ日は上書き。final の日は確定済み）
 //   POST /api/questions {kind:'ink'}            -> 書いた線の長さと画面サイズを、端末ごとに保存する
-//   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）。dryRun で確認だけ、keepOrder で並びを保つ
+//   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）。1回のコミットにまとめる。keepOrder で並びを保つ
 //   POST /api/questions {kind:'shortcuts'}      -> 選択のショートカット一覧を保存する（まるごと置き換え）
 //   POST /api/questions {kind:'order'}          -> 一覧の並び順を保存する
 //   POST /api/questions {kind:'meta'}           -> 問題集の名前・逆向き許可だけを変える
@@ -338,109 +338,170 @@ async function addStudyTimeTotal(addSeconds) {
   await writeFile(STUDY_TIME_TOTAL_FILE, JSON.stringify(saved, null, 2), '勉強時間の累計を更新');
 }
 
+// --- 1回のコミットで、複数のファイルを書き換える（Git Data API） ---
+// 問題集1冊ごとに「書く→消す→一覧を書く」をすると、フォルダ名を1つ変えるだけで、冊数×3回前後のコミットになる。
+// ここでは、いまの最新のコミットを土台に、変更をまとめた新しいコミットを1つ作って、ブランチをそこへ進める。
+// ファイルの中身は読み込まず、すでにあるデータ（blob）を別の場所に付け替えるだけなので、冊数が多くても通信の数は同じ。
+// ブランチを進めるのが最後の1回だけなので、途中で失敗しても何も変わらない（半端に移った状態にならない）。
+async function ghJson(url, init) {
+  const r = await gh(url, init);
+  if (!r.ok) {
+    const t = await r.text();
+    const e = new Error('GitHub ' + ((init && init.method) || 'GET') + ' 失敗 (' + r.status + ') ' + t.slice(0, 200));
+    e.status = r.status;
+    throw e;
+  }
+  return r.json();
+}
+
+// build(snap) は、土台のコミットの中身（snap.files: パス → {sha, mode}、snap.readText(sha): 中身の文字列）を見て、
+//   { fail: { status, error } }                        … 何も書かずに断る
+//   { changes: [...], result: … }                      … changes を1つのコミットにする
+// を返す。changes の要素: { path, text } 書く／置き換える、{ path, remove: true } 消す、{ path, sha, mode } 同じ中身を別の場所へ。
+// 別の書き込みが先に入っていたときは、土台を取り直して、build からやり直す（最大3回）。
+async function commitInOne(message, build) {
+  const base = 'https://api.github.com/repos/' + REPO;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const info = await ghJson(base);
+    const branch = info.default_branch;
+    const ref = await ghJson(base + '/git/ref/heads/' + encPath(branch));
+    const headSha = ref.object.sha;
+    const head = await ghJson(base + '/git/commits/' + headSha);
+    const treeSha = head.tree.sha;
+    const tree = await ghJson(base + '/git/trees/' + treeSha + '?recursive=1');
+    if (tree.truncated) throw new Error('ファイルが多すぎて、一度に扱えません。');
+    const files = {};
+    (tree.tree || []).forEach(function (n) { if (n.type === 'blob') files[n.path] = { sha: n.sha, mode: n.mode }; });
+
+    const snap = {
+      files: files,
+      readText: async function (sha) {
+        const b = await ghJson(base + '/git/blobs/' + sha);
+        return Buffer.from(b.content || '', b.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+      }
+    };
+    const out = await build(snap);
+    if (out.fail) return { fail: out.fail };
+
+    const entries = [];
+    for (const c of out.changes) {
+      if (c.remove) {
+        entries.push({ path: c.path, mode: '100644', type: 'blob', sha: null });
+      } else if (c.sha) {
+        entries.push({ path: c.path, mode: c.mode || '100644', type: 'blob', sha: c.sha });
+      } else {
+        const blob = await ghJson(base + '/git/blobs', { method: 'POST', body: JSON.stringify({ content: c.text, encoding: 'utf-8' }) });
+        entries.push({ path: c.path, mode: '100644', type: 'blob', sha: blob.sha });
+      }
+    }
+    const newTree = await ghJson(base + '/git/trees', { method: 'POST', body: JSON.stringify({ base_tree: treeSha, tree: entries }) });
+    const commit = await ghJson(base + '/git/commits', {
+      method: 'POST',
+      body: JSON.stringify({ message: message, tree: newTree.sha, parents: [headSha] })
+    });
+    const r = await gh(base + '/git/refs/heads/' + encPath(branch), {
+      method: 'PATCH',
+      body: JSON.stringify({ sha: commit.sha, force: false })
+    });
+    if (r.ok) return { result: out.result };
+    if (r.status === 422 || r.status === 409) continue;   // 別の書き込みが先に入った。取り直してやり直す
+    const text = await r.text();
+    throw new Error('GitHub 更新失敗 (' + r.status + ') ' + text.slice(0, 200));
+  }
+  throw new Error('ほかの書き込みと重なって、移せませんでした。もう一度お試しください（何も移していません）。');
+}
+
 // --- 階層の移動 ---
 // 問題集1つ、またはフォルダ（中の問題集すべて）を、別の場所へ移す。フォルダ名の変更も、これで行う。
-// 問題集のファイルを新しい場所に書き、古い場所を消す。成績は問題の id で持っているので、場所が変わっても影響しない。
-// 一覧（index.json）の場所と、ショートカットの場所も一緒に直す。
-// 1つずつ移すので、途中で失敗すると一部だけ移った状態になる（移せた分は一覧に反映する。一覧がずれたときは rebuild で直せる）。
+// 問題集のファイルを新しい場所へ付け替え、古い場所を消し、一覧（index.json）とショートカットの場所も直す。
+// これらすべてを、1回のコミットにまとめる（commitInOne）。成績は問題の id で持っているので、場所が変わっても影響しない。
+// 途中で失敗したときは、何も移っていない。
 function dirOf(p) { return p.split('/').slice(0, -1).join('/'); }
 
-// opts.dryRun: 何も書かず、移す問題集の一覧（plan）と衝突の確認だけを返す。画面が1冊ずつ移すときの、事前の確認に使う
 // opts.keepOrder: 一覧での並びを変えない（フォルダ名の変更のように、親のフォルダが変わらない移動のとき）
 async function moveSets(from, to, opts) {
   opts = opts || {};
   if (from === to) return { status: 400, error: '移動先が、いまの場所と同じです。' };
-  const index = await readIndex();
-  const isSet = index.sets.some(function (s) { return s.path === from; });
-  const moving = isSet
-    ? index.sets.filter(function (s) { return s.path === from; })
-    : index.sets.filter(function (s) { return s.path.startsWith(from + '/'); });
-  if (moving.length === 0) return { status: 404, error: '見つかりません: ' + from };
-  if (!isSet && to.startsWith(from + '/')) return { status: 400, error: 'フォルダを、自分自身の中へは移せません。' };
 
-  const plan = moving.map(function (s) { return { oldPath: s.path, newPath: to + s.path.slice(from.length) }; });
-  const movingPaths = {};
-  plan.forEach(function (p) { movingPaths[p.oldPath] = true; });
-  const allPaths = index.sets.map(function (s) { return s.path; });
-
-  // 移した先で、同じ場所に問題集がある／問題集とフォルダの名前がぶつかるときは、何も移さない
-  for (const p of plan) {
-    const parts = p.newPath.split('/');
-    for (let i = 1; i < parts.length; i++) {
-      const ancestor = parts.slice(0, i).join('/');
-      if (allPaths.indexOf(ancestor) !== -1 && !movingPaths[ancestor]) {
-        return { status: 409, error: '「' + ancestor + '」は問題集なので、その中へは移せません。' };
-      }
-    }
-    const clash = allPaths.some(function (q) { return !movingPaths[q] && (q === p.newPath || q.startsWith(p.newPath + '/')); });
-    if (clash || (await readFile(SETS_DIR + '/' + p.newPath + '.json'))) {
-      return { status: 409, error: '移動先に、同じ名前の問題集かフォルダがあります: ' + p.newPath };
-    }
-  }
-
-  if (opts.dryRun) {
-    return { status: 200, moved: 0, plan: plan.map(function (p) { return { from: p.oldPath, to: p.newPath }; }) };
-  }
-
-  const done = [];
-  let failure = null;
-  try {
-    for (const p of plan) {
-      const f = await readFile(SETS_DIR + '/' + p.oldPath + '.json');
-      if (!f) throw new Error('見つかりません: ' + p.oldPath);
-      const j = JSON.parse(f.text);
-      j.path = p.newPath;
-      await writeFile(SETS_DIR + '/' + p.newPath + '.json', JSON.stringify(j, null, 2), '移動: ' + p.oldPath + ' → ' + p.newPath);
-      // 新しい場所に書けてから、古い場所を消す（どの時点で止まっても、中身はどちらかに残る）
+  const out = await commitInOne('移動: ' + from + ' → ' + to, async function (snap) {
+    // 一覧とショートカットは、これから書き換える土台のコミットから読む（途中で別の書き込みが入っても、古い内容で上書きしないため）
+    let index = { updated_at: null, sets: [] };
+    if (snap.files[INDEX_FILE]) {
       try {
-        await deleteFile(SETS_DIR + '/' + p.oldPath + '.json', '移動（元を削除）: ' + p.oldPath);
-      } catch (err) {
-        // 古い方を消せなかったので、書いた新しい方を取り消す（同じ問題集が2つ残らないように）
-        try {
-          await deleteFile(SETS_DIR + '/' + p.newPath + '.json', '移動を取り消し: ' + p.newPath);
-        } catch (err2) {
-          err.message += '。新しい場所「' + p.newPath + '」に複製が残っています。どちらか一方を消してください';
+        const j = JSON.parse(await snap.readText(snap.files[INDEX_FILE].sha));
+        if (Array.isArray(j.sets)) index = j;
+      } catch (err) {}
+    }
+
+    const isSet = index.sets.some(function (s) { return s.path === from; });
+    const moving = isSet
+      ? index.sets.filter(function (s) { return s.path === from; })
+      : index.sets.filter(function (s) { return s.path.startsWith(from + '/'); });
+    if (moving.length === 0) return { fail: { status: 404, error: '見つかりません: ' + from } };
+    if (!isSet && to.startsWith(from + '/')) return { fail: { status: 400, error: 'フォルダを、自分自身の中へは移せません。' } };
+
+    const plan = moving.map(function (s) { return { oldPath: s.path, newPath: to + s.path.slice(from.length) }; });
+    const movingPaths = {};
+    plan.forEach(function (p) { movingPaths[p.oldPath] = true; });
+    const allPaths = index.sets.map(function (s) { return s.path; });
+
+    // 移した先で、同じ場所に問題集がある／問題集とフォルダの名前がぶつかるときは、何も移さない
+    for (const p of plan) {
+      const parts = p.newPath.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const ancestor = parts.slice(0, i).join('/');
+        if (allPaths.indexOf(ancestor) !== -1 && !movingPaths[ancestor]) {
+          return { fail: { status: 409, error: '「' + ancestor + '」は問題集なので、その中へは移せません。' } };
         }
-        throw err;
       }
-      done.push(p);
+      const clash = allPaths.some(function (q) { return !movingPaths[q] && (q === p.newPath || q.startsWith(p.newPath + '/')); });
+      if (clash || snap.files[SETS_DIR + '/' + p.newPath + '.json']) {
+        return { fail: { status: 409, error: '移動先に、同じ名前の問題集かフォルダがあります: ' + p.newPath } };
+      }
+      if (!snap.files[SETS_DIR + '/' + p.oldPath + '.json']) {
+        return { fail: { status: 404, error: '問題集のファイルが見つかりません: ' + p.oldPath + '（一覧とずれています。一覧の作り直しで直ります）' } };
+      }
     }
-  } catch (err) {
-    failure = err;
-  }
 
-  if (done.length > 0) {
-    try {
-      // 一覧: 移せた分の場所を直す。親のフォルダが変わるときは、移した先のいちばん下に並べる
-      const byOld = {};
-      done.forEach(function (p) { byOld[p.oldPath] = p.newPath; });
-      index.sets.forEach(function (s) { if (byOld[s.path]) s.path = byOld[s.path]; });
-      if (!opts.keepOrder && dirOf(from) !== dirOf(to)) {
-        const moved = index.sets.filter(function (s) { return done.some(function (p) { return p.newPath === s.path; }); });
-        index.sets = index.sets.filter(function (s) { return moved.indexOf(s) === -1; }).concat(moved);
-      }
-      await writeIndex(index);
+    const changes = [];
+    plan.forEach(function (p) {
+      const old = snap.files[SETS_DIR + '/' + p.oldPath + '.json'];
+      changes.push({ path: SETS_DIR + '/' + p.newPath + '.json', sha: old.sha, mode: old.mode });   // 中身はそのまま、別の場所へ
+      changes.push({ path: SETS_DIR + '/' + p.oldPath + '.json', remove: true });
+    });
 
-      // ショートカット: 中の場所も直す
-      const sc = await readShortcuts();
-      let changed = false;
-      sc.shortcuts.forEach(function (s) {
-        s.items.forEach(function (it) {
-          if (byOld[it.path]) { it.path = byOld[it.path]; changed = true; }
+    // 一覧: 場所を直す。親のフォルダが変わるときは、移した先のいちばん下に並べる
+    const byOld = {};
+    plan.forEach(function (p) { byOld[p.oldPath] = p.newPath; });
+    index.sets.forEach(function (s) { if (byOld[s.path]) s.path = byOld[s.path]; });
+    if (!opts.keepOrder && dirOf(from) !== dirOf(to)) {
+      const moved = index.sets.filter(function (s) { return plan.some(function (p) { return p.newPath === s.path; }); });
+      index.sets = index.sets.filter(function (s) { return moved.indexOf(s) === -1; }).concat(moved);
+    }
+    index.updated_at = new Date().toISOString();
+    changes.push({ path: INDEX_FILE, text: JSON.stringify(index, null, 2) });
+
+    // ショートカット: 中の場所も直す（変わるものがあるときだけ書く）
+    if (snap.files[SHORTCUT_FILE]) {
+      let sc = null;
+      try { sc = JSON.parse(await snap.readText(snap.files[SHORTCUT_FILE].sha)); } catch (err) {}
+      if (sc) {
+        const list = sanitizeShortcuts(sc.shortcuts);
+        let changed = false;
+        list.forEach(function (s) {
+          s.items.forEach(function (it) {
+            if (byOld[it.path]) { it.path = byOld[it.path]; changed = true; }
+          });
         });
-      });
-      if (changed) {
-        await writeFile(SHORTCUT_FILE, JSON.stringify({ updated_at: new Date().toISOString(), shortcuts: sc.shortcuts }, null, 2), 'ショートカットの場所を更新');
+        if (changed) changes.push({ path: SHORTCUT_FILE, text: JSON.stringify({ updated_at: new Date().toISOString(), shortcuts: list }, null, 2) });
       }
-    } catch (err) {
-      // ファイルは移せているので、中身は無事。一覧やショートカットの更新だけが済んでいない
-      if (!failure) failure = new Error('問題集のファイルは移せましたが、一覧の更新に失敗しました: ' + (err.message || err));
     }
-  }
-  if (failure) {
-    return { status: 500, error: String(failure.message || failure) + '（' + done.length + '件を移した後で止まりました。問題集の中身は消えていません。一覧がずれたときは、一覧の作り直しで直せます）', moved: done.length };
-  }
-  return { status: 200, moved: done.length };
+
+    return { changes: changes, result: plan };
+  });
+
+  if (out.fail) return { status: out.fail.status, error: out.fail.error };
+  return { status: 200, moved: out.result.length, plan: out.result.map(function (p) { return { from: p.oldPath, to: p.newPath }; }) };
 }
 
 // --- 選択のショートカット ---
@@ -773,9 +834,9 @@ module.exports = async (req, res) => {
           res.status(400).json({ error: '場所の指定が正しくありません。' });
           return;
         }
-        const r = await moveSets(from, to, { dryRun: body.dryRun === true, keepOrder: body.keepOrder === true });
+        const r = await moveSets(from, to, { keepOrder: body.keepOrder === true });
         if (r.status === 200) res.status(200).json({ moved: r.moved, from: from, to: to, plan: r.plan });
-        else res.status(r.status).json({ error: r.error, moved: r.moved || 0 });
+        else res.status(r.status).json({ error: r.error, moved: 0 });
         return;
       }
 

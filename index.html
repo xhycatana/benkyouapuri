@@ -10,8 +10,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="暗記">
+  <!-- 外部の読み込みは、順番に待たず同時に始める（Web フォントは、style.css の中から読むと、style.css の到着を待ってから始まる） -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Noto+Sans+JP:wght@400;500;700&amp;display=swap">
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="style.css?v=7.6.0">
+  <link rel="stylesheet" href="style.css?v=7.8.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -198,7 +202,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v7.6.0</span>
+              <span class="cursor-default select-none font-mono">v7.8.0</span>
             </div>
           </div>
         </section>
@@ -351,6 +355,20 @@
             <button id="btn-edit-save" class="px-5 py-2 bg-black text-white text-xs font-bold hover:bg-slate-800 transition-colors focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>保存する</button>
           </div>
           <div id="edit-message" class="text-xs"></div>
+
+          <!-- 一番上・一番下へ一瞬で移るボタン（画面の右端に固定。編集画面にいる間だけ出る） -->
+          <div class="fixed right-1 top-1/2 -translate-y-1/2 z-30 flex flex-col space-y-2">
+            <button id="btn-edit-scroll-top" class="w-8 h-8 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="一番上へ">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 4h14M12 20V9M6 14l6-6 6 6" />
+              </svg>
+            </button>
+            <button id="btn-edit-scroll-bottom" class="w-8 h-8 bg-white hover:bg-slate-50 text-black border border-black flex items-center justify-center focus:outline-none shadow-sm" title="一番下へ">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 20h14M12 4v11M6 10l6 6 6-6" />
+              </svg>
+            </button>
+          </div>
         </section>
 
         <!-- 記憶の推移 -->
@@ -392,7 +410,7 @@
           <p class="text-[10px] text-slate-400 leading-relaxed">
             1日1件です。過去の日は、その日の終わり（日付が切り替わる直前）の値で、次にアプリを開いたときに確定します（開かなかった日も、そのとき計算して埋めます）。今日の分は途中の値で、ホーム画面を開いたとき・解き終えて戻ったときに更新します。
             <strong>合計知識量</strong>は、全問題集のすべての問題の「いま思い出せる確率」を足したもの（問題数 × 平均正答確率）で、
-            「いま思い出せる問題がだいたい何問か」を表します。まだ解いていない問題は 0% として数えます。逆向きの出題は含みません。
+            「いま思い出せる問題がだいたい何問か」を表します。まだ解いていない問題は 0% として数えます。「問題と答えを逆にすることを許可」した問題集は、逆向きの問題も別の1問として数えます。
           </p>
           <div id="trend-message" class="text-xs"></div>
         </section>
@@ -764,9 +782,8 @@
           <span id="move-progress-text" class="font-mono text-2xl font-bold text-slate-900"></span>
           <span id="move-progress-elapsed" class="font-mono text-xs text-slate-400"></span>
         </div>
-        <div class="w-full h-2 bg-slate-200"><div id="move-progress-bar" class="h-2 bg-black transition-all duration-200" style="width: 0%"></div></div>
         <div id="move-progress-current" class="text-[11px] text-slate-600 break-words min-h-[1.5em]"></div>
-        <p class="text-[11px] text-slate-600 leading-relaxed">問題集を1冊ずつ移しています。時間がかかることがありますが、<strong class="text-slate-800">終わるまでこの画面を閉じたり、ほかの操作を加えたりしないでください。予測不能なフォルダの重複が発生する場合があります。</strong></p>
+        <p class="text-[11px] text-slate-600 leading-relaxed">まとめて移しています。<strong class="text-slate-800">終わるまでお待ちください。</strong></p>
       </div>
     </div>
   </div>
@@ -885,20 +902,20 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=7.6.0"></script>
-  <script src="script/dom.js?v=7.6.0"></script>
-  <script src="script/util.js?v=7.6.0"></script>
-  <script src="script/memory.js?v=7.6.0"></script>
-  <script src="script/api.js?v=7.6.0"></script>
-  <script src="script/progress.js?v=7.6.0"></script>
-  <script src="script/studytime.js?v=7.6.0"></script>
-  <script src="script/canvas.js?v=7.6.0"></script>
-  <script src="script/quiz.js?v=7.6.0"></script>
-  <script src="script/library.js?v=7.6.0"></script>
-  <script src="script/shortcuts.js?v=7.6.0"></script>
-  <script src="script/upload.js?v=7.6.0"></script>
-  <script src="script/manage.js?v=7.6.0"></script>
-  <script src="script/trend.js?v=7.6.0"></script>
-  <script src="script/app.js?v=7.6.0"></script>
+  <script src="script/state.js?v=7.8.0"></script>
+  <script src="script/dom.js?v=7.8.0"></script>
+  <script src="script/util.js?v=7.8.0"></script>
+  <script src="script/memory.js?v=7.8.0"></script>
+  <script src="script/api.js?v=7.8.0"></script>
+  <script src="script/progress.js?v=7.8.0"></script>
+  <script src="script/studytime.js?v=7.8.0"></script>
+  <script src="script/canvas.js?v=7.8.0"></script>
+  <script src="script/quiz.js?v=7.8.0"></script>
+  <script src="script/library.js?v=7.8.0"></script>
+  <script src="script/shortcuts.js?v=7.8.0"></script>
+  <script src="script/upload.js?v=7.8.0"></script>
+  <script src="script/manage.js?v=7.8.0"></script>
+  <script src="script/trend.js?v=7.8.0"></script>
+  <script src="script/app.js?v=7.8.0"></script>
 </body>
 </html>
