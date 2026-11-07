@@ -9,6 +9,7 @@ function isDrawingPhase() {
 
 // --- フェーズ切り替え ---
 function switchPhase(newPhase) {
+  diagLog('app', 'app: 画面を ' + currentPhase + ' → ' + newPhase + ' に切り替え');
   currentPhase = newPhase;
   updateStudyTimer();   // 出題・丸つけへの出入りで、勉強時間の計測を始める・止める
 
@@ -127,8 +128,9 @@ function transitionPhase(actionAfterFadeOut) {
     return;
   }
 
-  if (isTransitioning) return;
+  if (isTransitioning) { diagLog('warn', 'app: transitionPhase を無視（isTransitioning）'); return; }
   isTransitioning = true;
+  diagLog('app', 'app: 暗転の切り替えを開始（isTransitioning = true）');
 
   setTimeout(() => {
     appBody.classList.add('fade-out');
@@ -143,6 +145,7 @@ function transitionPhase(actionAfterFadeOut) {
         setTimeout(() => {
           appBody.classList.remove('fade-out');
           isTransitioning = false;
+          diagLog('app', 'app: 暗転の切り替えが終わった（isTransitioning = false）');
         }, 500);
       });
     });
@@ -711,8 +714,8 @@ btnReviewNow.addEventListener('click', () => {
   transitionPhase(() => switchPhase('review'));
 });
 
-// 消去は、click ではなく「タップした」で実行する（click が遅れて届くと、消したあとに書き始めた1画目が消えるため。onTap を参照）
-onTap(btnClearTestCanvas, () => {
+btnClearTestCanvas.addEventListener('click', () => {
+  diagLog('app', 'app: 消去ボタン（出題）の click を受けた  isTransitioning=' + isTransitioning);
   if (isTransitioning) return;
   clearCurrentAnswerPage();
 });
@@ -841,22 +844,21 @@ function renderAnswerItemRows(items) {
       correctBtn.classList.toggle('border-green-500', r === true);
     }
 
-    // 素早く続けて押しても取りこぼさないよう、click ではなく「タップした」で判定する（onTap を参照）。
-    // iPad では、続けて押したときや、押した指が少し動いたときに、click が発生しないことがある。
-    const markWrong = () => {
+    wrongBtn.addEventListener('click', () => {
+      diagLog('app', 'app: 個別丸付け ×（' + (index + 1) + '番目）の click を受けた  isTransitioning=' + isTransitioning);
       if (isTransitioning) return;
       currentAnswerItemResults[index] = false;
       refreshRowStyle();
       updateReviewNextButtonReadiness();
-    };
-    const markCorrect = () => {
+    });
+    correctBtn.addEventListener('click', () => {
+      diagLog('app', 'app: 個別丸付け ○（' + (index + 1) + '番目）の click を受けた  isTransitioning=' + isTransitioning +
+        '  無効=' + correctBtn.classList.contains('pointer-events-none'));
       if (isTransitioning || correctBtn.classList.contains('pointer-events-none')) return;
       currentAnswerItemResults[index] = true;
       refreshRowStyle();
       updateReviewNextButtonReadiness();
-    };
-    onTap(wrongBtn, markWrong);
-    onTap(correctBtn, markCorrect);
+    });
 
     refreshRowStyle();
 
@@ -955,23 +957,27 @@ function undoLastReviewItem() {
 btnReviewUndo.addEventListener('click', undoLastReviewItem);
 
 btnSelfCorrect.addEventListener('click', () => {
+  diagLog('app', 'app: ⭕ボタンの click を受けた  isTransitioning=' + isTransitioning);
   if (isTransitioning) return;
   finalizeReviewItem(true);
 });
 
 btnSelfWrong.addEventListener('click', () => {
+  diagLog('app', 'app: ❌ボタンの click を受けた  isTransitioning=' + isTransitioning);
   if (isTransitioning) return;
   finalizeReviewItem(false);
 });
 
 btnReviewNext.addEventListener('click', () => {
+  diagLog('app', 'app: 次へボタン（複数答え）の click を受けた  isTransitioning=' + isTransitioning + '  無効=' + btnReviewNext.disabled);
   if (isTransitioning || btnReviewNext.disabled) return;
   const allCorrect = currentAnswerItemResults.length > 0 &&
     currentAnswerItemResults.every((r) => r === true);
   finalizeReviewItem(allCorrect);
 });
 
-onTap(btnClearReviewCanvas, () => {
+btnClearReviewCanvas.addEventListener('click', () => {
+  diagLog('app', 'app: 消去ボタン（丸付け）の click を受けた  isTransitioning=' + isTransitioning);
   if (isTransitioning) return;
   clearCurrentAnswerPage();
 });

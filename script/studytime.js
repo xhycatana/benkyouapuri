@@ -329,7 +329,7 @@ function renderInkList() {
     if (r.self) {
       const input = document.createElement('input');
       input.type = 'number';
-      input.step = '0.1';
+      input.step = '0.01';   // 11インチ表記でも実際は10.88インチ、のように、少数第2位で合わせられるように
       input.min = '1';
       input.max = '100';
       input.placeholder = '画面サイズ';

@@ -203,26 +203,3 @@ function shuffleArray(array) {
   }
   return array;
 }
-
-// ボタンを「タップした」ときに fn を呼ぶ。click の代わりに使う。
-// iPad の Safari は、ボタンを触ったあと、ホバーによる見た目の変化を見届けるために click をすぐ渡さないことがあり、
-// 手書きのキャンバスの上にあるボタン（消去・丸付け）では、その間に書き始めた線へ後から消去が効いてしまっていた。
-// ペンや指が離れた瞬間に、「ほとんど動かさず、ボタンの上で離した」ことを自分で確かめて実行する。
-// 触れた瞬間には実行しない（ボタンの上から書き始めた線で、消去や判定が働かないように）。
-// キーボードの操作（click、detail が 0）も受け付ける。
-function onTap(el, fn) {
-  let start = null;
-  el.addEventListener('pointerdown', function (e) {
-    start = { id: e.pointerId, x: e.clientX, y: e.clientY };
-  });
-  el.addEventListener('pointerup', function (e) {
-    if (!start || start.id !== e.pointerId) return;
-    const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    start = null;
-    const r = el.getBoundingClientRect();
-    const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-    if (moved <= 10 && inside) fn(e);
-  });
-  el.addEventListener('pointercancel', function () { start = null; });
-  el.addEventListener('click', function (e) { if (e.detail === 0) fn(e); });
-}

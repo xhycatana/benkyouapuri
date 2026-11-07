@@ -90,6 +90,7 @@ class GlobalHandwritingCanvas {
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
+    diagLog('canvas', 'canvas: resizeCanvas → ' + width + '×' + height + '（dpr ' + dpr + '）  ストローク=' + (this.stroke ? '進行中' : 'なし'));
 
     const tempCanvas = document.createElement('canvas');
     let hasContent = false;
@@ -202,7 +203,8 @@ class GlobalHandwritingCanvas {
       pointerType: e.pointerType,
       lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
       lastT: pos.t,                 // 直前のサンプル点の時刻（再配信の検出用）
-      midX: pos.x, midY: pos.y      // 直前に通過した中点（曲線の描き始め）
+      midX: pos.x, midY: pos.y,     // 直前に通過した中点（曲線の描き始め）
+      n: 0                          // 描いた区間の数（診断の記録用）
     };
     // ボタンの上をペンが通っても入力が途切れないよう、
     // このポインタの以降のイベントをキャンバスに固定する
@@ -210,17 +212,28 @@ class GlobalHandwritingCanvas {
   }
 
   startDrawing(e) {
-    if (!isDrawingPhase() || isTransitioning) return;
+    if (!isDrawingPhase() || isTransitioning) {
+      diagLog('warn', 'canvas: pointerdown を無視（' + (!isDrawingPhase() ? '出題・丸付け中ではない: ' + currentPhase : 'isTransitioning') + '）');
+      return;
+    }
     this.notePointerType(e);
-    if (this.shouldIgnorePointer(e)) return;
+    if (this.shouldIgnorePointer(e)) {
+      diagLog('warn', 'canvas: pointerdown を無視（ペンを検知済みなので、指は描かない）');
+      return;
+    }
     e.preventDefault();
     if (e.pointerType === 'touch') this.snapshotBeforeTouch();
 
     // 前のストロークが残っていたら、閉じてから新しく始める。
     // ペンを上げてすぐ下ろすと pointerup を取りこぼすことがあり、
     // 古いストロークが残ったままだと次の線が引けなくなる。
-    if (this.stroke) this.finishStroke();
+    if (this.stroke) {
+      diagLog('warn', 'canvas: 前のストロークが残っていた（' + this.stroke.pointerType + '#' + this.stroke.pointerId + '、' + this.stroke.n + '区間）→ 閉じて新しく始める');
+      this.finishStroke();
+    }
     this.beginStroke(e);
+    diagResetOnce();
+    diagLog('canvas', 'canvas: ストローク開始 ' + e.pointerType + '#' + e.pointerId);
   }
 
   draw(e) {
@@ -232,18 +245,26 @@ class GlobalHandwritingCanvas {
     if (!this.stroke && e.buttons > 0) {
       if (e.pointerType === 'touch') this.snapshotBeforeTouch();
       this.beginStroke(e);
+      diagLog('warn', 'canvas: pointerdown が届かないまま move が来たので、move からストローク開始 ' + e.pointerType + '#' + e.pointerId);
     }
 
     // 別のポインタから来たペンの描画イベントなら、前のストロークが
     // 取り残されていると判断して引き継ぐ（pointerdown ごと取りこぼした場合の保険）
     if (this.stroke && this.stroke.pointerId !== e.pointerId &&
         e.pointerType === 'pen' && e.buttons > 0) {
+      diagLog('warn', 'canvas: 別のペン（#' + e.pointerId + '）の描画イベントが来たので、残っていたストローク（#' + this.stroke.pointerId + '）を引き継ぐ');
       this.finishStroke();
       this.beginStroke(e);
     }
 
     // 進行中のストロークと違うポインタから来たイベントは捨てる
-    if (!this.stroke || this.stroke.pointerId !== e.pointerId) return;
+    if (!this.stroke || this.stroke.pointerId !== e.pointerId) {
+      if (e.buttons > 0) {
+        diagLogOnce('drop' + e.pointerId + (this.stroke ? this.stroke.pointerId : '-'), 'warn',
+          'canvas: 触れている間の move を捨てた（' + (this.stroke ? 'ストロークは別のポインタ#' + this.stroke.pointerId : 'ストロークが無い') + '、この move は ' + e.pointerType + '#' + e.pointerId + '）');
+      }
+      return;
+    }
 
     e.preventDefault();
 
@@ -259,7 +280,7 @@ class GlobalHandwritingCanvas {
   extendStroke(pos) {
     const s = this.stroke;
     const fromX = s.lastX, fromY = s.lastY;
-    if (extendSmoothStroke(this.ctx, s, pos)) addInkLength(Math.hypot(pos.x - fromX, pos.y - fromY));
+    if (extendSmoothStroke(this.ctx, s, pos)) { s.n++; addInkLength(Math.hypot(pos.x - fromX, pos.y - fromY)); }
   }
 
   // ホーム画面に戻ったら解除する（ペンが使えなくなったときに指へ切り替える逃げ道）
@@ -272,6 +293,7 @@ class GlobalHandwritingCanvas {
   finishStroke() {
     const s = this.stroke;
     if (!s) return;
+    diagLog('canvas', 'canvas: ストローク終了 ' + s.pointerType + '#' + s.pointerId + '（' + s.n + '区間）');
 
     // 最後の中点から実際の終点までを描き足してストロークを閉じる
     if (s.midX !== s.lastX || s.midY !== s.lastY) {
@@ -289,11 +311,15 @@ class GlobalHandwritingCanvas {
 
   stopDrawing(e) {
     if (!this.stroke) return;
-    if (e && e.pointerId !== undefined && e.pointerId !== this.stroke.pointerId) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== this.stroke.pointerId) {
+      diagLog('warn', 'canvas: ' + e.type + ' を無視（ストロークは #' + this.stroke.pointerId + '、これは #' + e.pointerId + '）');
+      return;
+    }
     this.finishStroke();
   }
 
   clear() {
+    diagLog('canvas', 'canvas: clear()  ストローク=' + (this.stroke ? '進行中（' + this.stroke.pointerType + '#' + this.stroke.pointerId + '、' + this.stroke.n + '区間）' : 'なし'));
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.loadTokens = this.loadTokens.map(t => t + 1);
     this.halfLoading = [false, false];
@@ -338,6 +364,7 @@ class GlobalHandwritingCanvas {
   }
 
   clearHalf(side) {
+    diagLog('canvas', 'canvas: clearHalf(' + side + ')  ストローク=' + (this.stroke ? '進行中（' + this.stroke.n + '区間）' : 'なし'));
     const r = this.halfRect(side);
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);

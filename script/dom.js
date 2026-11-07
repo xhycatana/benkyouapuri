@@ -93,6 +93,7 @@ const inputMaxProbability = document.getElementById('input-max-probability');
 const questionFontInput = document.getElementById('question-font-input');
 const questionFontVal = document.getElementById('question-font-val');
 const checkRuledLines = document.getElementById('check-ruled-lines');
+const checkDiag = document.getElementById('check-diag');
 
 const btnUseSample = document.getElementById('btn-use-sample');
 const btnUseSampleKanji = document.getElementById('btn-use-sample-kanji');
