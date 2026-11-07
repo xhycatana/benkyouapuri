@@ -28,3 +28,25 @@ body {
   height: 1px;
   background-color: #e2e8f0;
 }
+
+/* ホーム画面の最初の表示。
+   余白を揃える処理（script/quiz.js の fitScreenMargins）は、JS が読み込まれてからでないと動かない。
+   それまでの間、箱が狭い幅（768px）のまま見えて、あとから広がってしまうので、同じ式を CSS でも書いておく。
+   JS が動いたあとは、同じ値を style 属性に入れるので、見た目は変わらない。
+   式: 余白 M ＝ max(上の余白, (画面幅 − 768px) ÷ 3)。
+     上の余白 ＝ body の余白 + main の上下の余白（16px）＝ 32px、md 以上（768px〜）は 40px
+     左の余白 ＝ body の余白 ＝ 16px、md 以上は 24px
+     下の余白 ＝ body の余白 + フッター（16px）+ main の上下の余白（16px）＝ 48px、md 以上は 56px
+   body・main・フッターの余白（index.html の p-4 md:p-6、py-4、pb-4）を変えたら、ここの数字も変える。 */
+#phase-import {
+  max-width: calc(100% - 2 * max(0px, max(32px, (100vw - 768px) / 3) - 16px));
+  margin-top: max(0px, max(32px, (100vw - 768px) / 3) - 32px);
+  margin-bottom: max(0px, max(32px, (100vw - 768px) / 3) - 48px);
+}
+@media (min-width: 768px) {
+  #phase-import {
+    max-width: calc(100% - 2 * max(0px, max(40px, (100vw - 768px) / 3) - 24px));
+    margin-top: max(0px, max(40px, (100vw - 768px) / 3) - 40px);
+    margin-bottom: max(0px, max(40px, (100vw - 768px) / 3) - 56px);
+  }
+}

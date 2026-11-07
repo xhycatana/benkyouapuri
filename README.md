@@ -997,7 +997,7 @@ py tools/build_css.py --check    # 作り直さずに、いまの tailwind.css �
 **全部を同じ値に揃えてください。**揃っているかは次で確認できます。
 
 ```bash
-grep -o '7\.11\.0' index.html | wc -l
+grep -o '7\.11\.1' index.html | wc -l
 ```
 
 `19` 以外が出たら、揃っていません。
