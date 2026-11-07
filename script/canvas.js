@@ -204,7 +204,8 @@ class GlobalHandwritingCanvas {
       lastX: pos.x, lastY: pos.y,   // 直前のサンプル点
       lastT: pos.t,                 // 直前のサンプル点の時刻（再配信の検出用）
       midX: pos.x, midY: pos.y,     // 直前に通過した中点（曲線の描き始め）
-      n: 0                          // 描いた区間の数（診断の記録用）
+      n: 0,                         // 描いた区間の数（診断の記録用）
+      samples: [[pos.x, pos.y]]     // 描いた線の上の点（診断で、画面に線が残っているかを確かめるため）
     };
     // ボタンの上をペンが通っても入力が途切れないよう、
     // このポインタの以降のイベントをキャンバスに固定する
@@ -233,7 +234,7 @@ class GlobalHandwritingCanvas {
     }
     this.beginStroke(e);
     diagResetOnce();
-    diagLog('canvas', 'canvas: ストローク開始 ' + e.pointerType + '#' + e.pointerId);
+    diagLog('canvas', 'canvas: ストローク開始 ' + e.pointerType + '#' + e.pointerId + diagSinceClear());
   }
 
   draw(e) {
@@ -280,7 +281,31 @@ class GlobalHandwritingCanvas {
   extendStroke(pos) {
     const s = this.stroke;
     const fromX = s.lastX, fromY = s.lastY;
-    if (extendSmoothStroke(this.ctx, s, pos)) { s.n++; addInkLength(Math.hypot(pos.x - fromX, pos.y - fromY)); }
+    if (extendSmoothStroke(this.ctx, s, pos)) {
+      s.n++;
+      if (penDiag.on && s.n % 4 === 0 && s.samples.length < 80) s.samples.push([pos.x, pos.y]);
+      addInkLength(Math.hypot(pos.x - fromX, pos.y - fromY));
+    }
+  }
+
+  // 診断用。描いたはずの線の上の点で、キャンバスに本当に色が残っているかを確かめる（各点の周りの 7×7 ピクセルを読む）。
+  // 「入力は受け取って描いたのに、画面に出ない」のか、「描けていない」のかを見分けるため。診断がOFFのときは呼ばれない
+  diagInkCheck(s) {
+    if (s.n === 0) return '描いた区間なし';
+    const dpr = window.devicePixelRatio || 1;
+    const pick = [];
+    const step = Math.max(1, Math.ceil(s.samples.length / 12));
+    for (let i = 0; i < s.samples.length; i += step) pick.push(s.samples[i]);
+    let inked = 0;
+    pick.forEach((pt) => {
+      const x = Math.round(pt[0] * dpr) - 3, y = Math.round(pt[1] * dpr) - 3;
+      if (x < 0 || y < 0 || x + 7 > this.canvas.width || y + 7 > this.canvas.height) return;
+      try {
+        const d = this.ctx.getImageData(x, y, 7, 7).data;
+        for (let i = 3; i < d.length; i += 4) { if (d[i] > 0) { inked++; break; } }
+      } catch (err) {}
+    });
+    return '線の上の ' + pick.length + ' 点のうち、色が残っているのは ' + inked + ' 点' + (inked === 0 ? '（← 描いたのに、何も残っていない）' : '');
   }
 
   // ホーム画面に戻ったら解除する（ペンが使えなくなったときに指へ切り替える逃げ道）
@@ -293,7 +318,6 @@ class GlobalHandwritingCanvas {
   finishStroke() {
     const s = this.stroke;
     if (!s) return;
-    diagLog('canvas', 'canvas: ストローク終了 ' + s.pointerType + '#' + s.pointerId + '（' + s.n + '区間）');
 
     // 最後の中点から実際の終点までを描き足してストロークを閉じる
     if (s.midX !== s.lastX || s.midY !== s.lastY) {
@@ -301,6 +325,9 @@ class GlobalHandwritingCanvas {
       this.ctx.moveTo(s.midX, s.midY);
       this.ctx.lineTo(s.lastX, s.lastY);
       this.ctx.stroke();
+    }
+    if (penDiag.on) {
+      diagLog('canvas', 'canvas: ストローク終了 ' + s.pointerType + '#' + s.pointerId + '（' + s.n + '区間）' + diagSinceClear() + ' / ' + this.diagInkCheck(s));
     }
 
     this.stroke = null;
@@ -319,6 +346,7 @@ class GlobalHandwritingCanvas {
   }
 
   clear() {
+    diagNoteClear();
     diagLog('canvas', 'canvas: clear()  ストローク=' + (this.stroke ? '進行中（' + this.stroke.pointerType + '#' + this.stroke.pointerId + '、' + this.stroke.n + '区間）' : 'なし'));
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     this.loadTokens = this.loadTokens.map(t => t + 1);

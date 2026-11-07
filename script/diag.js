@@ -5,6 +5,8 @@
 //   ・画面の右上に、直近の記録を出す（色：ペン＝青、指＝緑、マウス＝灰、キャンバスの処理＝紫、アプリ＝黒、無視・異常＝赤）
 //   ・触れた場所に、印を一瞬出す（▼ 触れた＝塗りつぶしの丸、▲ 離れた＝丸、✕ 取り消し＝赤い丸、click＝四角）
 //   ・「コピー」で、全記録を文字にしてコピーする（チャットに貼って見せられる）
+// ポインタ以外（touch・mouse・ジェスチャー・スクロール・選択・フォーカス・visualViewport）と、ページの処理が止まった時間も記録する。
+//   「ペンが下りたのに pointerdown が届かない」とき、iPad が代わりに何をしているかを見るため。
 // 設定画面の「ペンの診断」で、入り切りする。切っている間は、何も受け取らず、何も変えない。
 // 受け取るだけで、入力の邪魔はしない（passive・capture のリスナーと、pointer-events: none のパネルだけ）。
 
@@ -13,7 +15,7 @@ const DIAG_MAX_LINES = 800;    // 持っておく行数（古いものから捨�
 const DIAG_SHOW_LINES = 36;    // 画面に出す行数
 const DIAG_COLORS = {
   pen: '#2563eb', touch: '#16a34a', mouse: '#64748b', click: '#d97706',
-  canvas: '#7c3aed', app: '#0f172a', warn: '#dc2626', env: '#94a3b8'
+  canvas: '#7c3aed', app: '#0f172a', warn: '#dc2626', env: '#94a3b8', mark: '#db2777'
 };
 
 const penDiag = {
@@ -28,7 +30,10 @@ const penDiag = {
   moveTimer: null,
   renderTimer: null,
   statusTimer: null,
-  onceKey: ''
+  onceKey: '',
+  lastClearAt: 0,  // 最後にキャンバスを消した時刻（消してから何秒後に描き始めたかを出すため）
+  lagTimer: null,
+  lagLast: 0
 };
 
 function diagNow() { return performance.now(); }
@@ -45,6 +50,13 @@ function diagLog(kind, text) {
   if (!penDiag.on) return;
   diagFlushMove();   // 続いている pointermove は、別の記録が来る前にまとめて出す（順番が前後しないように）
   diagPush(kind, text);
+}
+
+// キャンバスを消した時刻を覚える。「消してから○秒後」を、ストロークの記録に付ける
+function diagNoteClear() { if (penDiag.on) penDiag.lastClearAt = diagNow(); }
+function diagSinceClear() {
+  if (!penDiag.on || !penDiag.lastClearAt) return '';
+  return ' / clearから ' + ((diagNow() - penDiag.lastClearAt) / 1000).toFixed(3) + '秒後';
 }
 
 // 同じ理由を、1本の線の間に何度も出さないための記録（key が前回と同じなら出さない）。reset するまで有効
@@ -116,17 +128,17 @@ function diagOnClick(e) {
   diagMark(e.clientX, e.clientY, DIAG_COLORS.click, 'square');
 }
 
-// pointermove は数が多いので、続けて届いたものを1行にまとめる（触れている間＝移動、触れていない間＝ホバー）
-function diagOnMove(e) {
-  const key = e.pointerType + '#' + e.pointerId + '|' + (e.buttons > 0 ? 'move' : 'hover');
+// 数が多いもの（pointermove・scroll・touchmove など）は、続けて届いたものを1行にまとめる。
+// key が変わるか、別の記録が来るか、250ms 何も来なければ、まとめて1行にする
+function diagRun(key, kind, label, tail) {
   const now = diagNow();
   const m = penDiag.move;
   if (m && m.key === key) {
     m.n++;
-    m.x = e.clientX; m.y = e.clientY; m.target = e.target;
+    m.tail = tail;
   } else {
     diagFlushMove();
-    penDiag.move = { key: key, type: e.pointerType, id: e.pointerId, n: 1, at: now, x: e.clientX, y: e.clientY, target: e.target };
+    penDiag.move = { key: key, kind: kind, label: label, n: 1, at: now, tail: tail };
   }
   clearTimeout(penDiag.moveTimer);
   penDiag.moveTimer = setTimeout(diagFlushMove, 250);
@@ -137,9 +149,88 @@ function diagFlushMove() {
   if (!m) return;
   penDiag.move = null;
   clearTimeout(penDiag.moveTimer);
-  const label = m.key.endsWith('|move') ? '…移動' : '…ホバー';
-  diagPush(diagKindOf(m.type), label + ' ' + m.type + '#' + m.id + ' ×' + m.n +
-    ' → (' + Math.round(m.x) + ',' + Math.round(m.y) + ') ' + diagDescribe(m.target), m.at);
+  diagPush(m.kind, m.label + ' ×' + m.n + ' → ' + m.tail, m.at);
+}
+
+// pointermove（触れている間＝移動、触れていない間＝ホバー）
+function diagOnMove(e) {
+  const head = e.pointerType + '#' + e.pointerId;
+  const moving = e.buttons > 0;
+  diagRun(head + '|' + (moving ? 'move' : 'hover'), diagKindOf(e.pointerType), (moving ? '…移動 ' : '…ホバー ') + head,
+    '(' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ') ' + diagDescribe(e.target));
+}
+
+// --- ページに届く、ポインタ以外の入力 ---
+// 「ペンが下りたのに、pointerdown が届かない」とき、iPad が代わりに何を受け取っているかを見るためのもの。
+// タッチ（touchType が stylus ならペン、direct なら指）・マウス・ジェスチャー・メニュー・ドラッグ・選択・フォーカス・スクロール
+function diagTouchText(e) {
+  const list = Array.prototype.map.call(e.changedTouches || [], function (t) {
+    return (t.touchType || '?') + '@' + Math.round(t.clientX) + ',' + Math.round(t.clientY);
+  });
+  return 'touches=' + (e.touches ? e.touches.length : '?') + ' 変化=[' + list.join(' ') + '] → ' + diagDescribe(e.target);
+}
+
+function diagOnOther(e) {
+  if (diagInsidePanel(e.target)) return;
+  const type = e.type;
+  if (type === 'touchmove') { diagRun('touchmove', 'touch', '…touchmove', diagTouchText(e)); return; }
+  if (type === 'scroll') {
+    const tg = e.target;
+    diagRun('scroll|' + diagDescribe(tg), 'warn', '…スクロール',
+      (tg === document || tg === window) ? ('window y=' + window.scrollY) : (diagDescribe(tg) + ' top=' + tg.scrollTop));
+    return;
+  }
+  if (type === 'selectionchange') {
+    const sel = window.getSelection ? window.getSelection() : null;
+    diagRun('selectionchange', 'warn', '…selectionchange', sel ? ('type=' + sel.type + ' 長さ=' + String(sel).length) : '?');
+    return;
+  }
+  if (type === 'gesturechange') { diagRun('gesturechange', 'warn', '…gesturechange', 'scale=' + (e.scale || '?')); return; }
+  diagFlushMove();
+  if (type === 'touchstart' || type === 'touchend' || type === 'touchcancel') {
+    diagPush('touch', '◆' + type + ' ' + diagTouchText(e));
+  } else if (type === 'mousedown' || type === 'mouseup') {
+    diagPush('mouse', '◇' + type + ' (' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ') → ' + diagDescribe(e.target));
+  } else if (type === 'focusin' || type === 'focusout') {
+    diagPush('app', type + ' → ' + diagDescribe(e.target));
+  } else {
+    diagPush('warn', '※' + type + ' → ' + diagDescribe(e.target));   // gesturestart・contextmenu・dragstart・selectstart など。普通は出ない
+  }
+}
+
+// visualViewport（拡大・スクロールで動く、実際に見えている範囲）
+function diagOnViewport(e) {
+  const vv = window.visualViewport;
+  diagRun('vv|' + e.type, 'warn', '…visualViewport ' + e.type,
+    'scale=' + vv.scale.toFixed(3) + ' offset=(' + vv.offsetLeft.toFixed(1) + ',' + vv.offsetTop.toFixed(1) + ') size=' + Math.round(vv.width) + '×' + Math.round(vv.height));
+}
+
+// ページの処理が止まっていたか。100ms ごとに自分を呼び、予定より大きく遅れたら記録する
+function diagStartLagWatch() {
+  penDiag.lagLast = diagNow();
+  clearInterval(penDiag.lagTimer);
+  penDiag.lagTimer = setInterval(function () {
+    const now = diagNow();
+    const late = now - penDiag.lagLast - 100;
+    penDiag.lagLast = now;
+    if (late > 120 && !document.hidden) diagLog('warn', 'app: ページの処理が約 ' + Math.round(late) + 'ms 止まっていた');
+  }, 100);
+}
+
+// 「★失敗」を押した時点の、画面の状態
+function diagStateText() {
+  const vv = window.visualViewport;
+  const parts = [
+    'active=' + diagDescribe(document.activeElement),
+    'phase=' + currentPhase,
+    'isTransitioning=' + isTransitioning,
+    'ペン検知済み=' + (typeof globalCanvas !== 'undefined' ? globalCanvas.hasSeenPen : '?'),
+    'ストローク=' + (typeof globalCanvas !== 'undefined' && globalCanvas.stroke ? '進行中' : 'なし'),
+    'window scroll=(' + window.scrollX + ',' + window.scrollY + ')',
+    'phaseContainer top=' + (typeof phaseContainer !== 'undefined' ? phaseContainer.scrollTop : '?')
+  ];
+  if (vv) parts.push('visualViewport scale=' + vv.scale.toFixed(3) + ' offset=(' + vv.offsetLeft.toFixed(1) + ',' + vv.offsetTop.toFixed(1) + ')');
+  return parts.join(' / ');
 }
 
 // --- 画面全体の出来事 ---
@@ -153,6 +244,10 @@ function diagOnWindow(e) {
 
 const DIAG_POINTER_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture'];
 const DIAG_WINDOW_EVENTS = ['resize', 'orientationchange', 'pagehide', 'pageshow', 'focus', 'blur'];
+const DIAG_OTHER_EVENTS = ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'mousedown', 'mouseup',
+  'gesturestart', 'gesturechange', 'gestureend', 'contextmenu', 'dragstart', 'selectstart', 'selectionchange',
+  'focusin', 'focusout', 'scroll'];
+const DIAG_VIEWPORT_EVENTS = ['resize', 'scroll'];
 const diagListenOpts = { capture: true, passive: true };
 
 function diagAttach() {
@@ -160,6 +255,9 @@ function diagAttach() {
   document.addEventListener('click', diagOnClick, diagListenOpts);
   document.addEventListener('visibilitychange', diagOnWindow, diagListenOpts);
   DIAG_WINDOW_EVENTS.forEach(function (t) { window.addEventListener(t, diagOnWindow); });
+  DIAG_OTHER_EVENTS.forEach(function (t) { document.addEventListener(t, diagOnOther, diagListenOpts); });
+  if (window.visualViewport) DIAG_VIEWPORT_EVENTS.forEach(function (t) { window.visualViewport.addEventListener(t, diagOnViewport); });
+  diagStartLagWatch();
 }
 
 function diagDetach() {
@@ -167,6 +265,10 @@ function diagDetach() {
   document.removeEventListener('click', diagOnClick, diagListenOpts);
   document.removeEventListener('visibilitychange', diagOnWindow, diagListenOpts);
   DIAG_WINDOW_EVENTS.forEach(function (t) { window.removeEventListener(t, diagOnWindow); });
+  DIAG_OTHER_EVENTS.forEach(function (t) { document.removeEventListener(t, diagOnOther, diagListenOpts); });
+  if (window.visualViewport) DIAG_VIEWPORT_EVENTS.forEach(function (t) { window.visualViewport.removeEventListener(t, diagOnViewport); });
+  clearInterval(penDiag.lagTimer);
+  penDiag.lagTimer = null;
 }
 
 // --- 端末の情報（記録の先頭に入れる） ---
@@ -203,6 +305,11 @@ function diagBuildPanel() {
   const head = document.createElement('div');
   head.style.cssText = 'padding:3px 4px;border-bottom:1px solid #cbd5e1;white-space:nowrap;overflow:hidden;';
   head.appendChild(diagButton('コピー', diagCopy));
+  head.appendChild(diagButton('★失敗', function () {
+    diagLog('mark', '★ 本人の印: いまの操作が失敗した（この直前の記録が、失敗した操作）');
+    diagLog('mark', '★ 状態: ' + diagStateText());
+    diagSetStatus('★を記録');
+  }));
   head.appendChild(diagButton('消す', function () { penDiag.lines.length = 0; diagPush('env', '記録を消した'); diagRenderNow(); }));
   head.appendChild(diagButton('たたむ', function () { penDiag.folded = !penDiag.folded; diagRenderNow(); }));
   head.appendChild(diagButton('閉じる', function () { diagSetEnabled(false); }));
