@@ -978,7 +978,7 @@ tools/build_prompts.py 部品を結合して配布用のプロンプトを作る
 **全部を同じ値に揃えてください。**揃っているかは次で確認できます。
 
 ```bash
-grep -o '7\.10\.0' index.html | wc -l
+grep -o '7\.10\.1' index.html | wc -l
 ```
 
 `18` 以外が出たら、揃っていません。

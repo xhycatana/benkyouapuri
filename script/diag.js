@@ -296,7 +296,7 @@ function diagButton(label, onClick) {
   const b = document.createElement('button');
   b.type = 'button';
   b.textContent = label;
-  b.style.cssText = 'pointer-events:auto;padding:2px 6px;margin-right:4px;border:1px solid #000;background:#fff;font:inherit;';
+  b.style.cssText = 'pointer-events:auto;padding:2px 6px;border:1px solid #000;background:#fff;font:inherit;';
   b.addEventListener('click', onClick);
   return b;
 }
@@ -309,7 +309,8 @@ function diagBuildPanel() {
     'font:10px/1.4 ui-monospace,Menlo,Consolas,monospace;';
 
   const head = document.createElement('div');
-  head.style.cssText = 'padding:3px 4px;border-bottom:1px solid #cbd5e1;white-space:nowrap;overflow:hidden;';
+  // ボタンが多いので、幅が足りなければ折り返す（切れて「閉じる」が見えなくならないように）
+  head.style.cssText = 'padding:3px 4px;border-bottom:1px solid #cbd5e1;display:flex;flex-wrap:wrap;align-items:center;gap:4px;';
   head.appendChild(diagButton('コピー', function () { diagCopy('near'); }));
   head.appendChild(diagButton('全部', function () { diagCopy('all'); }));
   head.appendChild(diagButton('★失敗', function () {
