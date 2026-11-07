@@ -580,3 +580,68 @@ btnPenTestClear.addEventListener('click', () => {
 window.addEventListener('resize', () => { if (currentPhase === 'help') sizePenTestPad(); });
 
 // スライダー設定
+
+
+// --- ペンで押す、ボタンやスイッチ（どの画面でも） ---
+// iPad で、ペンでボタンを押した直後の、次の触れ方が落ちることがあった。出題中は、次の1画目が書けなくなり、
+// ほかの画面では、続けて押したボタンやスイッチが反応しなくなる（Safari のタブでも同じ。指で押したとき・
+// キャンバスをタップしたときは起きない。iPadOS の「スクリブル」をオフにすると直る）。
+// ペンがボタンに触れた瞬間に、iPad の側で判定が始まり、そのあいだの次の触れ方が、ページに渡されないためと見られる。
+// キャンバスは touchstart をページ側で止めている（上の touchstart）ので、この判定が始まらない。
+// そこで、ペンで触れたボタンやスイッチも、touchstart をページ側で止める（preventDefault）。止めると click が作られなくなるので、
+// ペンが離れたときに、「ほとんど動かさず、その要素の上で離した」ことを自分で確かめて、click() を呼ぶ。
+// ・対象はペン（touchType が stylus）だけ。指・マウス・キーボードは、触れ方を止めず、いつもどおり click で動く
+//   （指のスクロールは、ボタンの上から始めても、そのまま動く）
+// ・対象の要素は、button・summary・スイッチやチェックボックスの label・cursor-pointer の付いたもの。
+//   文字や数字の入力欄・スライダー・選択欄は、対象にしない（キャレットや、つまみの操作が要るため）
+const PEN_TAP_SLOP = 12;   // これ以上動かして離したら、押した扱いにしない（px）
+const PEN_TAP_SKIP = 'input:not([type=checkbox]):not([type=radio]), textarea, select';
+let penTapTouch = null;
+
+// 触れた場所にある、押せる要素（無ければ null）
+function penTapTarget(el) {
+  if (!el || !el.closest) return null;
+  if (el.closest(PEN_TAP_SKIP)) return null;
+  const btn = el.closest('button');
+  if (btn) return btn.disabled ? null : btn;
+  const summary = el.closest('summary');
+  if (summary) return summary;
+  const label = el.closest('label');
+  if (label) {
+    const c = label.control;
+    return (c && (c.type === 'checkbox' || c.type === 'radio') && !c.disabled) ? label : null;
+  }
+  return el.closest('.cursor-pointer');
+}
+
+function penTapStart(e) {
+  if (e.touches.length !== 1) return;
+  const t = e.changedTouches[0];
+  if (t.touchType !== 'stylus') return;
+  const target = penTapTarget(e.target);
+  if (!target) return;
+  e.preventDefault();
+  penTapTouch = { el: target, id: t.identifier, x: t.clientX, y: t.clientY };
+}
+
+function penTapEnd(e) {
+  const s = penTapTouch;
+  if (!s) return;
+  const t = Array.prototype.find.call(e.changedTouches, function (x) { return x.identifier === s.id; });
+  if (!t) return;
+  penTapTouch = null;
+  if (e.type === 'touchcancel') { diagLog('warn', 'ペンのタップ: touchcancel（押した扱いにしない）'); return; }
+  const r = s.el.getBoundingClientRect();
+  const inside = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
+  const moved = Math.hypot(t.clientX - s.x, t.clientY - s.y);
+  const pressed = inside && moved <= PEN_TAP_SLOP;
+  diagLog('app', 'ペンのタップ: touchend → ' + (pressed ? '押した扱い' : '押した扱いにしない（inside=' + inside + ' 動き=' + Math.round(moved) + 'px）') + ' → ' + diagDescribe(s.el));
+  if (pressed) s.el.click();
+}
+
+document.addEventListener('touchstart', penTapStart, { capture: true, passive: false });
+document.addEventListener('touchend', penTapEnd, { capture: true });
+document.addEventListener('touchcancel', penTapEnd, { capture: true });
+
+// 実験用に控えていた設定は、もう使わない
+try { localStorage.removeItem('flashmemo_exp'); } catch (err) {}

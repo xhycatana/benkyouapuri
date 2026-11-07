@@ -232,7 +232,6 @@ function diagStateText() {
     'isTransitioning=' + isTransitioning,
     'ペン検知済み=' + (typeof globalCanvas !== 'undefined' ? globalCanvas.hasSeenPen : '?'),
     'ストローク=' + (typeof globalCanvas !== 'undefined' && globalCanvas.stroke ? '進行中' : 'なし'),
-    expText(),
     'window scroll=(' + window.scrollX + ',' + window.scrollY + ')',
     'phaseContainer top=' + (typeof phaseContainer !== 'undefined' ? phaseContainer.scrollTop : '?')
   ];
@@ -290,7 +289,6 @@ function diagLogEnv() {
     ' / standalone:' + (navigator.standalone === true) +
     ' / coalesced:' + (typeof PointerEvent !== 'undefined' && 'getCoalescedEvents' in PointerEvent.prototype) +
     ' / https:' + (location.protocol === 'https:'));
-  diagPush('env', expText());
 }
 
 // --- パネル ---
@@ -450,79 +448,4 @@ document.addEventListener('DOMContentLoaded', function () {
   let stored = '0';
   try { stored = localStorage.getItem(STORAGE_KEY_DIAG) || '0'; } catch (err) {}
   diagSetEnabled(stored === '1');
-});
-
-// --- 実験の入り切り（style.css の body.exp-a / body.exp-b） ---
-// 記録の先頭の端末情報に、どの実験がONかも入れる
-const STORAGE_KEY_EXP = 'flashmemo_exp';
-
-function expState() {
-  let s = {};
-  try { s = JSON.parse(localStorage.getItem(STORAGE_KEY_EXP) || '{}') || {}; } catch (err) {}
-  return s;
-}
-
-let expCOn = false;   // 実験C（下の expCStart・expCEnd）がONか
-
-function expApply() {
-  const s = expState();
-  document.body.classList.toggle('exp-a', !!s.a);
-  document.body.classList.toggle('exp-b', !!s.b);
-  expCOn = !!s.c;
-  if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.checked = !!s.a;
-  if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.checked = !!s.b;
-  if (typeof checkExpC !== 'undefined' && checkExpC) checkExpC.checked = !!s.c;
-}
-
-function expSet(name, on) {
-  const s = expState();
-  s[name] = !!on;
-  try { localStorage.setItem(STORAGE_KEY_EXP, JSON.stringify(s)); } catch (err) {}
-  expApply();
-  diagLog('env', '実験 ' + name.toUpperCase() + ' を ' + (on ? 'ON' : 'OFF') + ' にした（いま A=' + !!s.a + ' B=' + !!s.b + ' C=' + !!s.c + '）');
-}
-
-function expText() {
-  const s = expState();
-  return '実験 A=' + !!s.a + ' B=' + !!s.b + ' C=' + !!s.c;
-}
-
-// 実験C: 出題・丸付け中のボタンの touchstart を、キャンバスと同じようにページ側で止める（preventDefault）。
-// 止めると、click が作られなくなるので、指やペンが離れたときに「ほとんど動かさず、ボタンの上で離した」ことを確かめて、
-// 自分で click() を呼ぶ。キャンバスと同じ「この触れ方はページが引き受ける」やり方で、iPad の側の判定を始めさせないための実験
-const EXP_C_SELECTOR = '#left-controls-container button, #phase-test button, #phase-review button, #app-header button';
-let expCTouch = null;
-
-function expCStart(e) {
-  if (!expCOn || !e.target || !e.target.closest) return;
-  const btn = e.target.closest(EXP_C_SELECTOR);
-  if (!btn || btn.disabled || !isDrawingPhase() || e.touches.length !== 1) return;
-  e.preventDefault();
-  const t = e.changedTouches[0];
-  expCTouch = { btn: btn, id: t.identifier, x: t.clientX, y: t.clientY };
-}
-
-function expCEnd(e) {
-  const s = expCTouch;
-  if (!s) return;
-  const t = Array.prototype.find.call(e.changedTouches, function (x) { return x.identifier === s.id; });
-  if (!t) return;
-  expCTouch = null;
-  if (e.type === 'touchcancel') { diagLog('warn', '実験C: touchcancel（押した扱いにしない）'); return; }
-  const r = s.btn.getBoundingClientRect();
-  const inside = t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
-  const moved = Math.hypot(t.clientX - s.x, t.clientY - s.y);
-  diagLog('app', '実験C: touchend → ' + (inside && moved <= 12 ? 'ボタンを押した扱い' : '押した扱いにしない（inside=' + inside + ' 動き=' + Math.round(moved) + 'px）') + ' → ' + diagDescribe(s.btn));
-  if (inside && moved <= 12) s.btn.click();
-}
-
-document.addEventListener('touchstart', expCStart, { capture: true, passive: false });
-document.addEventListener('touchend', expCEnd, { capture: true });
-document.addEventListener('touchcancel', expCEnd, { capture: true });
-
-document.addEventListener('DOMContentLoaded', function () {
-  expApply();
-  if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.addEventListener('change', function () { expSet('a', checkExpA.checked); });
-  if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.addEventListener('change', function () { expSet('b', checkExpB.checked); });
-  if (typeof checkExpC !== 'undefined' && checkExpC) checkExpC.addEventListener('change', function () { expSet('c', checkExpC.checked); });
 });
