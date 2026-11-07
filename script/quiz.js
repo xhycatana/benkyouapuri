@@ -311,18 +311,26 @@ function handleHomeDrop(files) {
 }
 
 // --- イベント設定 ---
+// ドロップ枠の強調。通常の色（border-slate-300・bg-white）と入れ替える（重ねると、どちらが効くかが CSS の並び順で決まってしまう）
+function setDropZoneActive(on) {
+  dropZone.classList.toggle('border-slate-300', !on);
+  dropZone.classList.toggle('bg-white', !on);
+  dropZone.classList.toggle('border-black', on);
+  dropZone.classList.toggle('bg-slate-50', on);
+}
+
 dropZone.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dropZone.classList.add('border-black', 'bg-slate-50');
+  setDropZoneActive(true);
 });
 
 dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('border-black', 'bg-slate-50');
+  setDropZoneActive(false);
 });
 
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
-  dropZone.classList.remove('border-black', 'bg-slate-50');
+  setDropZoneActive(false);
   handleHomeDrop(e.dataTransfer.files);
 });
 
@@ -838,9 +846,14 @@ function renderAnswerItemRows(items) {
 
     function refreshRowStyle() {
       const r = currentAnswerItemResults[index];
+      // 同じ項目（背景色・枠の色）の指定は、重ねず、入れ替える。重ねると、どちらが効くかが、CSS の並び順で決まってしまう
+      wrongBtn.classList.toggle('bg-white', r !== false);
       wrongBtn.classList.toggle('bg-red-100', r === false);
+      wrongBtn.classList.toggle('border-black', r !== false);
       wrongBtn.classList.toggle('border-red-500', r === false);
+      correctBtn.classList.toggle('bg-white', r !== true);
       correctBtn.classList.toggle('bg-green-100', r === true);
+      correctBtn.classList.toggle('border-black', r !== true);
       correctBtn.classList.toggle('border-green-500', r === true);
     }
 

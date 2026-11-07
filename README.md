@@ -681,7 +681,7 @@ R = exp( -経過日数 / 記憶の寿命 )
 
 ## 5. 自分で動かす場合
 
-Node.js もビルドも不要です。
+Node.js は不要です。JS にはビルドがありません。CSS（Tailwind）だけは、事前に作ったファイル（`tailwind.css`）をリポジトリに入れてあるので、**そのままで動きます**（作り直しが要るのは、画面のクラス名を変えたときだけです。→ 8 の「Tailwind の CSS を作り直す」）。
 
 ### 5.1 このリポジトリを Vercel に接続する
 
@@ -905,6 +905,8 @@ curl -H "x-passphrase: あなたの合言葉" "https://benkyouapuri.vercel.app/a
 ```
 index.html          画面
 style.css           フォントと最小限のスタイル
+tailwind.css        Tailwind が作った CSS（index.html と script/*.js のクラス名から、ツールで作る。手で直さない）
+tailwind.config.js  Tailwind の設定（調べる場所を書いてある）
 
 script/state.js     共有する状態
 script/dom.js       HTML の要素への参照
@@ -933,7 +935,7 @@ tools/build_prompts.py 部品を結合して配布用のプロンプトを作る
 
 ### 読み込み順に意味があります
 
-ビルドは行わず、`index.html` が上の順番どおりに `<script>` で読み込みます。
+JS にビルドはなく、`index.html` が上の順番どおりに `<script>` で読み込みます。
 モジュールではないので、**読み込んだ瞬間に上から実行されます。**
 
 `state` → `dom` → 各機能 → `app` の並びは、次の理由で崩せません。
@@ -967,6 +969,23 @@ tools/build_prompts.py 部品を結合して配布用のプロンプトを作る
 
 新しいボタンやスイッチは、普通に `<button>` や `<label>` を作って `click` に処理をつなげるだけで、この仕組みに乗ります。
 
+### Tailwind の CSS を作り直す
+
+画面の見た目は Tailwind（`class="flex px-4 …"` のような書き方）で書いています。以前は、ブラウザが毎回、外部のスクリプト（Play CDN）で CSS を組み立てていましたが、モバイル通信で開くのが遅くなるため、**事前に作った `tailwind.css` を読む**ようにしました（約20KB。Play CDN のスクリプトは約400KB でした）。
+
+**`index.html` か `script/*.js` の中の、クラス名を変えたら、必ず作り直してください。**忘れると、新しく足したクラスの見た目が、画面に出ません。
+
+```bash
+py tools/build_css.py            # tailwind.css を作り直す
+py tools/build_css.py --check    # 作り直さずに、いまの tailwind.css が最新かだけを確かめる（古ければ終了コード 1）
+```
+
+- 公式ツール（Tailwind standalone CLI、**3.4.17**。以前の Play CDN と同じ版）が要ります。リポジトリには入れません（`tools/bin/` は `.gitignore` です）。置き方は、`tools/build_css.py` の先頭に書いてあります（Windows は、公式リリースの `tailwindcss-windows-x64.exe` を `tools/bin/tailwindcss.exe` として置き、配布元の `sha256sums.txt` の値と照合します）
+- 設定は `tailwind.config.js`（調べる場所は `index.html` と `script/**/*.js`）です。Play CDN と同じ標準の設定で、色などは変えていません
+- クラス名は、**文字列そのままで書いてください**（`'bg-' + color` のように、実行時に組み立てると、ツールが見つけられません）
+- **同じ項目（背景色・枠の色など）を、2つのクラスで重ねないでください**（`bg-white` と `bg-green-100` を同時に付ける、など）。どちらが効くかは、CSS の中の並び順で決まり、Play CDN と今のツールでは並びが違います。JS で切り替えるときは、片方を外して、もう片方を足します（`quiz.js` の個別丸付けのボタンや、ドロップ枠が、その形です）
+- 作り直したあとは、バージョンを上げます（`tailwind.css` も、`?v=` の付いた宛先で読んでいます）
+
 ### バージョンの上げ方
 
 読み込みは `script/xxx.js?v=x.y.z` の形にしています。
@@ -974,16 +993,16 @@ tools/build_prompts.py 部品を結合して配布用のプロンプトを作る
 忘れると iPad が古いファイルをキャッシュから読み、直したはずの不具合が再現します。
 
 `index.html` の中で、バージョン文字列は **18 か所**に出てきます
-（`style.css` に1、画面下部の表示に1、`script/*.js` に16）。
+（`style.css` と `tailwind.css` に各1、画面下部の表示に1、`script/*.js` に16）。
 **全部を同じ値に揃えてください。**揃っているかは次で確認できます。
 
 ```bash
-grep -o '7\.10\.1' index.html | wc -l
+grep -o '7\.11\.0' index.html | wc -l
 ```
 
-`18` 以外が出たら、揃っていません。
+`19` 以外が出たら、揃っていません。
 
-**同じバージョンのまま、中身を変えないでください。**`vercel.json` で、`script/` と `style.css` を「1年間、再確認せずに端末へ控える」設定にしています（モバイル通信で、開くたびに十数本のファイルの確認を待たないため）。
+**同じバージョンのまま、中身を変えないでください。**`vercel.json` で、`script/`・`style.css`・`tailwind.css` を「1年間、再確認せずに端末へ控える」設定にしています（モバイル通信で、開くたびに十数本のファイルの確認を待たないため）。
 バージョンが変わると、読み込みの宛先（`?v=…`）が変わるので、新しいファイルが読み込まれます。
 
 ---
