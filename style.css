@@ -28,3 +28,23 @@ body {
   height: 1px;
   background-color: #e2e8f0;
 }
+
+/* 実験（設定画面の「ペンの診断」の下。iPad で、ボタンを押した直後の1画目が書けなくなる件を調べるためのもの）。
+   出題・丸付け中に、手書きのキャンバスの上にあるボタンだけに効かせる。
+   実験A: ボタンにも touch-action: none を付ける（キャンバスと同じく、「この触れ方はページが引き受ける」と宣言する）。
+   実験B: タップの強調・長押しのメニュー・文字の選択を切る（iPad がボタンの触れ方に付ける、付随の動きを減らす）。 */
+body.exp-a #left-controls-container button,
+body.exp-a #phase-test button,
+body.exp-a #phase-review button,
+body.exp-a #app-header button {
+  touch-action: none;
+}
+body.exp-b #left-controls-container button,
+body.exp-b #phase-test button,
+body.exp-b #phase-review button,
+body.exp-b #app-header button {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

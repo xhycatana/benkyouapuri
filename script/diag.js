@@ -226,6 +226,7 @@ function diagStateText() {
     'isTransitioning=' + isTransitioning,
     'ペン検知済み=' + (typeof globalCanvas !== 'undefined' ? globalCanvas.hasSeenPen : '?'),
     'ストローク=' + (typeof globalCanvas !== 'undefined' && globalCanvas.stroke ? '進行中' : 'なし'),
+    expText(),
     'window scroll=(' + window.scrollX + ',' + window.scrollY + ')',
     'phaseContainer top=' + (typeof phaseContainer !== 'undefined' ? phaseContainer.scrollTop : '?')
   ];
@@ -283,6 +284,7 @@ function diagLogEnv() {
     ' / standalone:' + (navigator.standalone === true) +
     ' / coalesced:' + (typeof PointerEvent !== 'undefined' && 'getCoalescedEvents' in PointerEvent.prototype) +
     ' / https:' + (location.protocol === 'https:'));
+  diagPush('env', expText());
 }
 
 // --- パネル ---
@@ -413,4 +415,41 @@ document.addEventListener('DOMContentLoaded', function () {
   let stored = '0';
   try { stored = localStorage.getItem(STORAGE_KEY_DIAG) || '0'; } catch (err) {}
   diagSetEnabled(stored === '1');
+});
+
+// --- 実験の入り切り（style.css の body.exp-a / body.exp-b） ---
+// 記録の先頭の端末情報に、どの実験がONかも入れる
+const STORAGE_KEY_EXP = 'flashmemo_exp';
+
+function expState() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(STORAGE_KEY_EXP) || '{}') || {}; } catch (err) {}
+  return s;
+}
+
+function expApply() {
+  const s = expState();
+  document.body.classList.toggle('exp-a', !!s.a);
+  document.body.classList.toggle('exp-b', !!s.b);
+  if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.checked = !!s.a;
+  if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.checked = !!s.b;
+}
+
+function expSet(name, on) {
+  const s = expState();
+  s[name] = !!on;
+  try { localStorage.setItem(STORAGE_KEY_EXP, JSON.stringify(s)); } catch (err) {}
+  expApply();
+  diagLog('env', '実験 ' + name.toUpperCase() + ' を ' + (on ? 'ON' : 'OFF') + ' にした（いま A=' + !!s.a + ' B=' + !!s.b + '）');
+}
+
+function expText() {
+  const s = expState();
+  return '実験 A=' + !!s.a + ' B=' + !!s.b;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  expApply();
+  if (typeof checkExpA !== 'undefined' && checkExpA) checkExpA.addEventListener('change', function () { expSet('a', checkExpA.checked); });
+  if (typeof checkExpB !== 'undefined' && checkExpB) checkExpB.addEventListener('change', function () { expSet('b', checkExpB.checked); });
 });
