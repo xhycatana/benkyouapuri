@@ -15,8 +15,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Noto+Sans+JP:wght@400;500;700&amp;display=swap">
   <!-- Tailwind は、事前に作った CSS（tailwind.css）を読む。作り直し方は README の「Tailwind の CSS を作り直す」。style.css より後に置く（以前の Play CDN も、style.css の後に効いていた） -->
-  <link rel="stylesheet" href="style.css?v=7.11.1">
-  <link rel="stylesheet" href="tailwind.css?v=7.11.1">
+  <link rel="stylesheet" href="style.css?v=7.17.0">
+  <link rel="stylesheet" href="tailwind.css?v=7.17.0">
 </head>
 <body id="app-body" class="h-screen w-screen relative p-4 md:p-6 flex overflow-hidden bg-white select-none">
 
@@ -133,10 +133,10 @@
               </div>
             </div>
             <div class="flex items-center justify-between text-sm">
-              <span class="font-bold text-slate-700">何問ずつに区切るか</span>
+              <span class="font-bold text-slate-700">1周の上限</span>
               <div class="flex items-center space-x-2">
-                <input type="number" id="input-group-size" value="0" min="0" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="区切る問題数">
-                <span class="text-slate-400">問ずつ</span>
+                <input type="number" id="input-window-size" value="0" min="0" class="w-20 p-2 border border-black text-center focus:outline-none font-bold text-sm" title="1周に出す問題数の上限（0 なら上限なし）。選ばれた問題のうち、この数だけを出し、正解した分だけ、まだ出していない問題を補充します">
+                <span class="text-slate-400">問まで</span>
               </div>
             </div>
 
@@ -204,7 +204,7 @@
                 詳細設定
               </button>
               <span>・</span>
-              <span class="cursor-default select-none font-mono">v7.11.1</span>
+              <span class="cursor-default select-none font-mono">v7.17.0</span>
             </div>
           </div>
         </section>
@@ -291,6 +291,13 @@
             <p class="text-[10px] text-slate-400">▲▼で、同じ階層の中の順番を入れ替えます。フォルダと問題集は、区別せず1本の並びです（問題集をフォルダより上にも置けます）。新しく追加した問題集や、移した問題集は、その階層のいちばん下に並びます。問題集とフォルダの名前は、書き換えるとその場で保存されます（フォルダ名を変えると、中の問題集の場所もまとめて変わります）。「移動」で別のフォルダへ移せます。✎で問題や見出しを編集できます。</p>
             <div id="manage-tree" class="text-sm"></div>
           </div>
+          <div class="bg-white border border-black p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-bold text-slate-700">同じ問題</span>
+              <button id="btn-unify" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none">まとめる</button>
+            </div>
+            <p class="text-[10px] text-slate-400">問題文と答えが同じ問題は、別の問題集に入っていても、同じ問題として成績を共有します（追加・編集のときは、自動でそろいます）。すでにある、同じ問題の成績を1つにまとめるときだけ、押します。成績が両方にあるときは、最後に解いた日が新しいほうを残します。</p>
+          </div>
           <div id="manage-message" class="text-xs"></div>
         </section>
 
@@ -351,6 +358,11 @@
             <input id="edit-search" type="text" placeholder="問題・答え・見出しで絞り込む" class="w-full p-2 border border-slate-300 focus:outline-none focus:border-black">
             <div id="edit-list"></div>
           </div>
+
+          <label id="edit-shared-option" class="hidden flex items-start space-x-2 text-[11px] cursor-pointer">
+            <input id="edit-apply-shared" type="checkbox" class="mt-0.5 w-4 h-4 accent-black">
+            <span class="text-slate-700">「共有」の問題は、ほかの問題集の同じ問題も、すべて同じように直す<span class="text-slate-400">（チェックしないときは、この問題集の分だけが直り、ほかの問題集の同じ問題は、元のままです）</span></span>
+          </label>
 
           <div class="flex items-center justify-between">
             <button id="btn-edit-reset-all" class="px-3 py-2 border border-slate-300 text-[10px] text-slate-500 hover:border-red-600 hover:text-red-600 focus:outline-none disabled:opacity-30 disabled:pointer-events-none" disabled>この問題集の成績をすべてリセット</button>
@@ -461,14 +473,6 @@
         <!-- 一問一答出題画面 (Phase Test) -->
         <section id="phase-test" class="hidden space-y-4 w-full h-full flex flex-col justify-between">
           <div id="test-progress-header" class="space-y-2 w-full pt-1">
-            <div id="test-group-bar-container" class="hidden relative w-full bg-white border border-slate-200 h-2.5 rounded-none overflow-hidden">
-              <div id="test-group-bar-current" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #ffff00;"></div>
-              <div id="test-group-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
-            </div>
-            <div id="test-group-text-container" class="hidden justify-between items-center text-xs text-slate-400 px-2">
-              <span id="test-group-text">グループ 0 / 0</span>
-            </div>
-
             <div class="relative w-full bg-white border border-slate-200 h-2.5 rounded-none overflow-hidden">
               <div id="test-progress-bar-current" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #ffff00;"></div>
               <div id="test-progress-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
@@ -516,14 +520,6 @@
         <!-- 振り返り・自己採点画面 (Phase Review) -->
         <section id="phase-review" class="hidden space-y-4 w-full h-full flex flex-col justify-between">
           <div id="review-progress-header" class="space-y-2 w-full pt-1">
-            <div id="review-group-bar-container" class="hidden relative w-full bg-white border border-slate-200 h-2.5 rounded-none overflow-hidden">
-              <div id="review-group-bar-current" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #ffff00;"></div>
-              <div id="review-group-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
-            </div>
-            <div id="review-group-text-container" class="hidden justify-between items-center text-xs text-slate-400 px-2">
-              <span id="review-group-text">グループ 0 / 0</span>
-            </div>
-
             <div class="relative w-full bg-white border border-slate-200 h-2.5 rounded-none overflow-hidden">
               <div id="review-progress-bar-current" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #ffff00;"></div>
               <div id="review-progress-bar-confirmed" class="absolute left-0 top-0 h-full transition-all duration-150" style="width: 0%; background-color: #00ff00;"></div>
@@ -627,7 +623,7 @@
             <p>右上の、歯車の左隣のボタンで、<strong>1ページ表示（既定）と見開き（2ページ）表示</strong>をワンクリックで切り替えられます。見開きにすると、画面は真ん中の線で左右2ページに分かれ、めくると1ページずつ進むので、右にあったページが左に移り、1つ前のページを見ながら続きを書けます。切り替えても、書いた内容はページの新しい形に合わせて伸び縮みするだけで消えません。</p>
             <p><strong>消去ボタン</strong>は、見えているページを消します。何も書いていないページの後ろにはページを足せず、白紙の最後のページは前に戻ると消えます。</p>
             <p>模範解答と解説を見て、自分で <strong>⭕️（合ってた）／ ❌（間違えた）</strong>を押します。</p>
-            <p>❌ を押した問題だけ、<strong>正解するまでその場で繰り返し出題されます。</strong>全問 ⭕️ になったら次のグループへ、なければホーム画面へ戻ります。</p>
+            <p>❌ を押した問題だけ、<strong>正解するまでその場で繰り返し出題されます。</strong>全問 ⭕️ になったら、ホーム画面へ戻ります（「1周の上限」を入れているときは、補充する問題もなくなったら）。</p>
             <p class="text-slate-400">途中でやめたいときは、出題・丸つけの画面の左上の戻るボタンでホーム画面に戻れます。それまでに丸つけした問題の成績は保存されています。</p>
           </div>
 
@@ -720,7 +716,7 @@
             <p><strong>出題順をランダムにする</strong> … 選ばれた問題の中で、順番だけを入れ替えます。どの問題が選ばれるかは変わりません。</p>
             <p><strong>問題と答えを逆にする</strong> … 2列目（またはJSONの答え側）を問題として出します。</p>
             <p><strong>出題する上限</strong> … 優先度の高い順に、その数だけ出題します（0で全部）。</p>
-            <p><strong>何問ずつに区切るか</strong> … 長時間の勉強専用の設定です。区切ると、間違えた問題が早く戻ってきます。0なら一続きで出ます。</p>
+            <p><strong>1周の上限</strong> … 1周に出す問題数の上限です。たとえば 20 と入れると、20問を出し、正解した分だけ、まだ出していない問題が補充されて、毎回 20問で出題されます。補充する問題がなくなったら、間違えた問題だけが残って、少しずつ減っていきます。0なら上限なしで、選んだ問題を全部出します。</p>
           </div>
 
           <div class="bg-white border border-black p-4 space-y-2 text-xs text-slate-700 leading-relaxed">
@@ -794,6 +790,15 @@
   <div id="question-edit-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
     <div class="bg-white border border-black w-full max-w-md p-5 space-y-3 max-h-[85vh] overflow-y-auto">
       <h3 class="text-base font-bold text-slate-900 border-b border-black pb-2">この問題を書き換える</h3>
+      <div id="qedit-swap-note" class="hidden text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-300 p-2">※問題と答えが逆に出題されています。ここでは、元の問題を編集します。</div>
+      <div id="qedit-shared-box" class="hidden border border-slate-300 p-2 space-y-1 text-[11px]">
+        <p class="font-bold text-slate-700">この問題は、ほかの問題集にも入っています：<span id="qedit-shared-list" class="font-normal"></span></p>
+        <label class="flex items-start space-x-2 cursor-pointer">
+          <input id="qedit-apply-shared" type="checkbox" class="mt-0.5 w-4 h-4 accent-black">
+          <span class="text-slate-700">ほかの問題集の同じ問題も、すべて同じように直す</span>
+        </label>
+        <p class="text-slate-400">チェックしないときは、この問題集の分だけが直り、ほかの問題集の同じ問題は、元のままです。</p>
+      </div>
       <div id="qedit-headings" class="text-[10px] text-slate-400 break-words"></div>
       <label class="block text-xs">
         <span class="font-bold text-slate-700">問題文</span>
@@ -862,6 +867,20 @@
           <input type="range" id="question-font-input" min="16" max="40" step="1" value="24" class="w-full accent-black">
         </div>
 
+        <div class="pt-2 border-t border-slate-100 space-y-2">
+          <div class="flex items-center justify-between pt-2">
+            <span class="font-bold text-slate-700">記憶モデルの自動調整</span>
+            <button id="btn-tune" class="px-3 py-1.5 border border-black text-xs font-bold hover:bg-slate-50 focus:outline-none disabled:opacity-30">解答履歴から調べる</button>
+          </div>
+          <p class="text-[10px] text-slate-400 leading-relaxed">これまでの解答から、「何%で思い出せると予測して、実際はどうだったか」を調べ、忘れ方の設定を、自分に合わせます。前半のデータで当てはめて、後半のデータで、本当に当たるかを確かめます。設定は、「この設定にする」を押したときだけ変わります。</p>
+          <div id="tune-current" class="text-[10px] text-slate-500"></div>
+          <div id="tune-result" class="space-y-1 text-[11px]"></div>
+          <div class="flex items-center space-x-3">
+            <button id="btn-tune-apply" class="hidden px-3 py-1.5 bg-black text-white text-xs font-bold hover:bg-slate-800 focus:outline-none">この設定にする</button>
+            <button id="btn-tune-revert" class="hidden text-[10px] text-slate-500 underline focus:outline-none">元の設定に戻す</button>
+          </div>
+        </div>
+
         <div class="pt-2 border-t border-slate-100">
           <div class="flex items-center justify-between pt-2">
             <span class="font-bold text-slate-700">背景の罫線</span>
@@ -914,21 +933,22 @@
     </div>
   </div>
 
-  <script src="script/state.js?v=7.11.1"></script>
-  <script src="script/dom.js?v=7.11.1"></script>
-  <script src="script/util.js?v=7.11.1"></script>
-  <script src="script/diag.js?v=7.11.1"></script>
-  <script src="script/memory.js?v=7.11.1"></script>
-  <script src="script/api.js?v=7.11.1"></script>
-  <script src="script/progress.js?v=7.11.1"></script>
-  <script src="script/studytime.js?v=7.11.1"></script>
-  <script src="script/canvas.js?v=7.11.1"></script>
-  <script src="script/quiz.js?v=7.11.1"></script>
-  <script src="script/library.js?v=7.11.1"></script>
-  <script src="script/shortcuts.js?v=7.11.1"></script>
-  <script src="script/upload.js?v=7.11.1"></script>
-  <script src="script/manage.js?v=7.11.1"></script>
-  <script src="script/trend.js?v=7.11.1"></script>
-  <script src="script/app.js?v=7.11.1"></script>
+  <script src="script/state.js?v=7.17.0"></script>
+  <script src="script/dom.js?v=7.17.0"></script>
+  <script src="script/util.js?v=7.17.0"></script>
+  <script src="script/diag.js?v=7.17.0"></script>
+  <script src="script/memory.js?v=7.17.0"></script>
+  <script src="script/api.js?v=7.17.0"></script>
+  <script src="script/progress.js?v=7.17.0"></script>
+  <script src="script/studytime.js?v=7.17.0"></script>
+  <script src="script/canvas.js?v=7.17.0"></script>
+  <script src="script/quiz.js?v=7.17.0"></script>
+  <script src="script/library.js?v=7.17.0"></script>
+  <script src="script/shortcuts.js?v=7.17.0"></script>
+  <script src="script/upload.js?v=7.17.0"></script>
+  <script src="script/manage.js?v=7.17.0"></script>
+  <script src="script/trend.js?v=7.17.0"></script>
+  <script src="script/tune.js?v=7.17.0"></script>
+  <script src="script/app.js?v=7.17.0"></script>
 </body>
 </html>

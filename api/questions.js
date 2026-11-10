@@ -5,9 +5,11 @@
 //   GET  /api/questions?path=世界史/…   -> 問題集1つの中身
 //   GET  /api/questions?rebuild=1      -> リポジトリを走査して一覧を作り直す
 //   GET  /api/questions?strip_tags=1   -> 問題集のファイルから、廃止したタグの項目を消す（一度だけ）
+//   GET  /api/questions?path=…&kind=shared -> その問題集の問題のうち、ほかの問題集にも入っている問題（共有している問題）と、その問題集の一覧
 //   GET  /api/questions?kind=shortcuts -> 選択のショートカット
 //   GET  /api/questions?kind=progress  -> 解答履歴の集計
 //   GET  /api/questions?kind=history&month=YYYY-MM -> 解答ログ（月ごと）
+//   GET  /api/questions?kind=historyall -> 解答ログの全部（記憶モデルの自動調整用。問題の ID を番号に置き換えて、小さくして返す）
 //   GET  /api/questions?kind=studytime&month=YYYY-MM -> 勉強時間の記録（月ごと）
 //   GET  /api/questions?kind=studytimetotal -> 勉強時間の累計（全期間）
 //   GET  /api/questions?kind=ink       -> 書いた線の長さ（端末ごとの累計）
@@ -15,6 +17,7 @@
 //   POST /api/questions                -> 問題集を保存する
 //   POST /api/questions {kind:'snapshot'}       -> 日ごとの問題数・合計知識量を保存する（同じ日は上書き。final の日は確定済み）
 //   POST /api/questions {kind:'ink'}            -> 書いた線の長さと画面サイズを、端末ごとに保存する
+//   POST /api/questions {kind:'unify'}          -> すでにある、同じ問題（問題文と答えが同じ）の ID をそろえ、成績を1つにまとめる（dryRun で数だけ確認）
 //   POST /api/questions {kind:'move'}           -> 問題集・フォルダを別の場所へ移す（フォルダ名の変更も同じ）。1回のコミットにまとめる。keepOrder で並びを保つ
 //   POST /api/questions {kind:'shortcuts'}      -> 選択のショートカット一覧を保存する（まるごと置き換え）
 //   POST /api/questions {kind:'order'}          -> 一覧の並び順を保存する
@@ -263,6 +266,43 @@ function cleanIds(ids) {
 
 // --- 全履歴ログ（1回ごと。忘却曲線のパラメータ学習用の材料） ----------------
 // 月ごとのファイルに分けて、集計と違って際限なく太らないようにする。
+// 解答ログを全部読んで、小さくして返す（記憶モデルの自動調整に使う）。
+// { q: [問題の ID…], e: [[問題の番号, 解答日時(ms), 正解(1/0), 前回からの経過日数, そのときの寿命(日), 解き直しで失敗した回数（無ければ null）]…], files: 読んだファイルの数 }
+async function readAllHistory() {
+  const repoInfo = await gh('https://api.github.com/repos/' + REPO);
+  if (!repoInfo.ok) throw new Error('リポジトリ情報を取得できません (' + repoInfo.status + ')');
+  const branch = (await repoInfo.json()).default_branch;
+  const r = await gh('https://api.github.com/repos/' + REPO + '/git/trees/' + encodeURIComponent(branch) + '?recursive=1');
+  if (!r.ok) throw new Error('ファイル一覧を取得できません (' + r.status + ')');
+  const tree = await r.json();
+  const files = (tree.tree || []).filter(function (n) {
+    return n.type === 'blob' && n.path.startsWith(HISTORY_DIR + '/') && /\.json$/.test(n.path);
+  }).map(function (n) { return n.path; });
+
+  const qIndex = new Map();
+  const q = [];
+  const e = [];
+  const seenIds = new Set();   // 同じ記録（id）を、2回数えない
+  for (let i = 0; i < files.length; i += 6) {
+    const loaded = await Promise.all(files.slice(i, i + 6).map(async function (path) {
+      try {
+        const f = await readFile(path);
+        return f ? JSON.parse(f.text) : null;
+      } catch (err) { return null; }
+    }));
+    loaded.forEach(function (j) {
+      ((j && Array.isArray(j.entries)) ? j.entries : []).forEach(function (raw) {
+        const x = sanitizeHistoryEntry(raw);
+        if (!x || seenIds.has(x.id)) return;
+        seenIds.add(x.id);
+        if (!qIndex.has(x.question_id)) { qIndex.set(x.question_id, q.length); q.push(x.question_id); }
+        e.push([qIndex.get(x.question_id), Date.parse(x.answered_at), x.correct ? 1 : 0, x.elapsed_days, x.lifespan_before, (typeof x.retries === 'number') ? x.retries : null]);
+      });
+    });
+  }
+  return { q: q, e: e, files: files.length };
+}
+
 function historyFile(month) {
   return HISTORY_DIR + '/' + month + '.json';
 }
@@ -285,7 +325,7 @@ function sanitizeHistoryEntry(e) {
   const questionId = (typeof e.question_id === 'string' && e.question_id) ? e.question_id : null;
   const answeredAt = (typeof e.answered_at === 'string' && !isNaN(Date.parse(e.answered_at))) ? e.answered_at : null;
   if (!id || !questionId || !answeredAt) return null;
-  return {
+  const out = {
     id: id,
     question_id: questionId,
     answered_at: answeredAt,
@@ -293,10 +333,36 @@ function sanitizeHistoryEntry(e) {
     lifespan_before: (typeof e.lifespan_before === 'number' && e.lifespan_before > 0) ? e.lifespan_before : null,
     elapsed_days: (typeof e.elapsed_days === 'number' && e.elapsed_days >= 0) ? e.elapsed_days : null
   };
+  // 解き直しで、また間違えた回数（最初の解答が不正解のときだけ。あとから付け足される）
+  if (typeof e.retries === 'number' && e.retries >= 0) out.retries = Math.min(50, Math.floor(e.retries));
+  return out;
 }
 
 // 端末を複数使っても取りこぼしたり重複したりしないよう、
 // 「置き換え」ではなく「id で重複を除いてから追加」で合成する。
+// 解答ログの合成。同じ id の記録は、2回数えない。ただし、あとから retries（解き直しで失敗した回数）が付いたものは、置き換える
+// （最初の解答を記録したあと、その問題を解き直し終えたときに、回数だけを足した記録を、もう一度送るため）。
+// 戻り値: { entries, added: 新しく加わった数, updated: retries を付け足した数 }
+function mergeHistoryEntriesUpdating(base, incoming) {
+  const at = new Map();
+  base.forEach(function (e, i) { at.set(e.id, i); });
+  let added = 0, updated = 0;
+  incoming.forEach(function (e) {
+    if (at.has(e.id)) {
+      const cur = base[at.get(e.id)];
+      if (typeof e.retries === 'number' && (typeof cur.retries !== 'number' || e.retries > cur.retries)) {
+        base[at.get(e.id)] = e;
+        updated++;
+      }
+      return;
+    }
+    at.set(e.id, base.length);
+    base.push(e);
+    added++;
+  });
+  return { entries: base, added: added, updated: updated };
+}
+
 function mergeHistoryEntries(base, incoming) {
   const seen = new Set(base.map(function (e) { return e.id; }));
   incoming.forEach(function (e) {
@@ -382,6 +448,7 @@ async function commitInOne(message, build) {
     };
     const out = await build(snap);
     if (out.fail) return { fail: out.fail };
+    if (out.changes.length === 0) return { result: out.result };   // 変えるものが無い（確認だけのときなど）。コミットは作らない
 
     const entries = [];
     for (const c of out.changes) {
@@ -409,6 +476,292 @@ async function commitInOne(message, build) {
     throw new Error('GitHub 更新失敗 (' + r.status + ') ' + text.slice(0, 200));
   }
   throw new Error('ほかの書き込みと重なって、移せませんでした。もう一度お試しください（何も移していません）。');
+}
+
+// --- 同じ問題は、同じ ID（＝成績を共有する） ---
+// 成績は問題の ID ごとに持つ。問題文と答えが同じ問題は、別の問題集に入っていても、同じ ID にそろえる。
+// ・問題集を追加するとき（ID の無い問題）、すでにある同じ問題があれば、その ID を使う
+// ・編集して保存するとき、ほかの問題集と ID を共有している問題の文を直したら、この問題集の分だけ新しい ID にして切り離す
+//   （切り離した問題は、それまでの成績を、新しい ID にも写す。ほかの問題集の同じ問題は、元の ID と成績のまま）
+// ・すでにある重複は、unifySameQuestions（管理ページの「同じ問題をまとめる」）で、1回だけまとめる
+function normText(s) { return String(s === undefined || s === null ? '' : s).replace(/\r\n?/g, '\n').trim(); }
+
+// 「同じ問題」の判定。問題文と答えが、前後の空白・改行コードの違いを除いて、完全に一致すること（解説は見ない）
+function contentKey(q) { return normText(q && q.question) + '\u0001' + normText(q && q.answer); }
+
+function newQuestionId(i) {
+  return Date.now().toString(36) + '-' + (i || 0).toString(36) + '-' + Math.random().toString(36).slice(2, 5);
+}
+
+// 一覧にある問題集を、一覧の順に、すべて読む（8冊ずつ）。[{ path, set }]
+async function readAllSets() {
+  const index = await readIndex();
+  const out = new Array(index.sets.length).fill(null);
+  for (let i = 0; i < index.sets.length; i += 8) {
+    await Promise.all(index.sets.slice(i, i + 8).map(async function (s, k) {
+      try {
+        const f = await readFile(SETS_DIR + '/' + s.path + '.json');
+        if (!f) return;
+        const j = JSON.parse(f.text);
+        if (Array.isArray(j.questions)) out[i + k] = { path: s.path, set: j };
+      } catch (err) {}
+    }));
+  }
+  return out.filter(Boolean);
+}
+
+// 保存する問題に、ID を決める。incoming は { id（無いこともある）, question, answer, commentary }。
+// oldText は、この場所にいまある問題集のファイルの中身（無ければ null）。
+// opts.applyToShared が true のときは、ほかの問題集と ID を共有している問題を直しても、切り離さず（ID は変えず）、
+//   ほかの問題集の同じ問題も、同じ内容に直す（返り値の propagate に、直す内容を入れる。書くのは、呼んだ側）。
+// 返り値: { shared: すでにある同じ問題の ID を使った数, detached: 切り離した数, idChanges: { 元の ID: 新しい ID }, propagate: { ID: { question, answer, commentary } } }
+async function assignQuestionIds(path, oldText, incoming, opts) {
+  const applyAll = !!(opts && opts.applyToShared);
+  let oldQs = [];
+  if (oldText) {
+    try { const j = JSON.parse(oldText); if (Array.isArray(j.questions)) oldQs = j.questions; } catch (err) {}
+  }
+  const oldKeyById = new Map();
+  const oldCommentaryById = new Map();
+  oldQs.forEach(function (q) { if (q && q.id) { oldKeyById.set(q.id, contentKey(q)); oldCommentaryById.set(q.id, normText(q.commentary)); } });
+
+  const isNew = function (q) { return !q.id || !oldKeyById.has(q.id); };
+  const isChanged = function (q) { return q.id && oldKeyById.has(q.id) && oldKeyById.get(q.id) !== contentKey(q); };
+  // 解説だけを直したときも、「すべて直す」を選んでいれば、ほかの問題集の同じ問題の解説を直す（解説は、同じ問題かどうかの判定には入れない）
+  const isCommentaryChanged = function (q) { return q.id && oldCommentaryById.has(q.id) && oldCommentaryById.get(q.id) !== normText(q.commentary); };
+  const result = { shared: 0, detached: 0, idChanges: {}, propagate: {} };
+  if (!incoming.some(function (q) { return isNew(q) || isChanged(q) || (applyAll && isCommentaryChanged(q)); })) return result;   // 並べ替えだけ、などは、ほかの問題集を調べない
+
+  const contentToId = new Map();   // 問題 → ID（一覧の順で、最初に見つかったもの。この場所の、いまの中身も含む）
+  const idsElsewhere = new Set();  // この問題集以外にある ID
+  (await readAllSets()).forEach(function (s) {
+    s.set.questions.forEach(function (q) {
+      if (!q || !q.id) return;
+      const k = contentKey(q);
+      if (!contentToId.has(k)) contentToId.set(k, q.id);
+      if (s.path !== path) idsElsewhere.add(q.id);
+    });
+  });
+
+  const detachThis = function (q) { return isChanged(q) && idsElsewhere.has(q.id) && !applyAll; };
+  const used = new Set();   // この問題集で、すでに使っている ID（1つの問題集の中で、ID が重ならないように）
+  incoming.forEach(function (q) { if (q.id && !isNew(q) && !detachThis(q)) used.add(q.id); });
+
+  // 「すべて直す」: ほかの問題集と ID を共有している問題は、ID を変えずに、ほかの問題集の同じ問題も直す
+  if (applyAll) {
+    incoming.forEach(function (q) {
+      if (q.id && !isNew(q) && idsElsewhere.has(q.id) && (isChanged(q) || isCommentaryChanged(q))) {
+        result.propagate[q.id] = { question: q.question, answer: q.answer, commentary: q.commentary };
+      }
+    });
+  }
+
+  incoming.forEach(function (q, i) {
+    if (detachThis(q)) {
+      const fresh = newQuestionId(i);
+      result.idChanges[q.id] = fresh;
+      result.detached++;
+      q.id = fresh;
+      used.add(fresh);
+    }
+  });
+
+  incoming.forEach(function (q, i) {
+    if (!isNew(q) && q.id) return;
+    const cand = contentToId.get(contentKey(q));
+    if (cand && !used.has(cand)) { q.id = cand; result.shared++; }
+    else if (!q.id) q.id = newQuestionId(i);
+    used.add(q.id);
+  });
+  return result;
+}
+
+// 共有している問題の「すべて直す」: この問題集と、同じ問題（同じ ID）が入っているほかの問題集のファイルと一覧を、1回のコミットで書く。
+// set は、この問題集の新しい中身。propagate は { ID: { question, answer, commentary } }。返り値: 直したほかの問題集の数
+async function saveSetWithShared(path, set, propagate, entry, message) {
+  const out = await commitInOne(message, async function (snap) {
+    let index = { updated_at: null, sets: [] };
+    if (snap.files[INDEX_FILE]) {
+      try { const j = JSON.parse(await snap.readText(snap.files[INDEX_FILE].sha)); if (Array.isArray(j.sets)) index = j; } catch (err) {}
+    }
+    const now = new Date().toISOString();
+    const changes = [];
+    let propagated = 0;
+    const others = index.sets.filter(function (s) { return s.path !== path; });
+    for (let i = 0; i < others.length; i += 8) {
+      await Promise.all(others.slice(i, i + 8).map(async function (s) {
+        const node = snap.files[SETS_DIR + '/' + s.path + '.json'];
+        if (!node) return;
+        let j;
+        try { j = JSON.parse(await snap.readText(node.sha)); } catch (err) { return; }
+        if (!Array.isArray(j.questions)) return;
+        let changed = false;
+        j.questions.forEach(function (q) {
+          const p = q && propagate[q.id];
+          if (p) { q.question = p.question; q.answer = p.answer; q.commentary = p.commentary; changed = true; }
+        });
+        if (!changed) return;
+        j.updated_at = now;
+        s.updated_at = now;
+        propagated++;
+        changes.push({ path: SETS_DIR + '/' + s.path + '.json', text: JSON.stringify(j, null, 2) });
+      }));
+    }
+    changes.push({ path: SETS_DIR + '/' + path + '.json', text: JSON.stringify(set, null, 2) });
+    const at = index.sets.findIndex(function (s) { return s.path === path; });
+    if (at >= 0) index.sets[at] = entry; else index.sets.push(entry);
+    index.updated_at = now;
+    changes.push({ path: INDEX_FILE, text: JSON.stringify(index, null, 2) });
+    return { changes: changes, result: propagated };
+  });
+  if (out.fail) throw new Error(out.fail.error);
+  return out.result;
+}
+
+// その問題集の問題のうち、ほかの問題集にも入っているもの（ID が同じ）と、その問題集の一覧。{ ID: [{ path, title }] }
+async function sharedQuestionsOf(path) {
+  const all = await readAllSets();
+  const mine = all.find(function (s) { return s.path === path; });
+  const shared = {};
+  if (!mine) return shared;
+  const wanted = new Set(mine.set.questions.map(function (q) { return q && q.id; }).filter(Boolean));
+  all.forEach(function (s) {
+    if (s.path === path) return;
+    s.set.questions.forEach(function (q) {
+      if (!q || !wanted.has(q.id)) return;
+      if (!shared[q.id]) shared[q.id] = [];
+      if (!shared[q.id].some(function (x) { return x.path === s.path; })) shared[q.id].push({ path: s.path, title: s.set.title || s.path.split('/').pop() });
+    });
+  });
+  return shared;
+}
+
+// 切り離した問題の成績を、新しい ID にも写す（編集で文を直しても、この問題集の成績は、それまでどおりに続けるため）
+async function copyStatsForDetached(idChanges) {
+  const olds = Object.keys(idChanges);
+  if (olds.length === 0) return;
+  const current = await readProgress();
+  const stats = current.stats || {};
+  let changed = false;
+  olds.forEach(function (old) {
+    ['', ':swap'].forEach(function (suffix) {
+      if (stats[old + suffix] && !stats[idChanges[old] + suffix]) {
+        stats[idChanges[old] + suffix] = Object.assign({}, stats[old + suffix]);
+        changed = true;
+      }
+    });
+  });
+  if (!changed) return;
+  await writeFile(PROGRESS_FILE, JSON.stringify({ updated_at: new Date().toISOString(), stats: stats }, null, 2), '成績を写す（問題の切り離し ' + olds.length + '件）');
+}
+
+// すでにある、同じ問題（別の問題集に入っている、問題文と答えが同じもの）の ID をそろえ、成績を1つにまとめる。
+// 成績は、最後に解いた日が新しいほうを残す（逆向き `id:swap` も同じ）。問題集のファイル・一覧・成績を、1回のコミットで書く。
+// 1つの問題集の中の重複は、触らない（ID が重ならないように）。dryRun のときは、数だけを返す。
+async function unifySameQuestions(dryRun) {
+  const out = await commitInOne('同じ問題をまとめる', async function (snap) {
+    let index = { updated_at: null, sets: [] };
+    if (snap.files[INDEX_FILE]) {
+      try { const j = JSON.parse(await snap.readText(snap.files[INDEX_FILE].sha)); if (Array.isArray(j.sets)) index = j; } catch (err) {}
+    }
+    let progress = { stats: {} };
+    if (snap.files[PROGRESS_FILE]) {
+      try { const j = JSON.parse(await snap.readText(snap.files[PROGRESS_FILE].sha)); if (j && typeof j.stats === 'object') progress = j; } catch (err) {}
+    }
+    const stats = progress.stats || {};
+
+    // 問題集を、一覧の順に読む
+    const sets = [];
+    for (let i = 0; i < index.sets.length; i += 8) {
+      const part = await Promise.all(index.sets.slice(i, i + 8).map(async function (s) {
+        const node = snap.files[SETS_DIR + '/' + s.path + '.json'];
+        if (!node) return null;
+        try { const j = JSON.parse(await snap.readText(node.sha)); return Array.isArray(j.questions) ? { path: s.path, set: j, changed: false } : null; } catch (err) { return null; }
+      }));
+      part.forEach(function (x) { if (x) sets.push(x); });
+    }
+
+    // 同じ問題ごとに、使われている ID を集める（1つの問題集では、最初の1問だけ）
+    const groups = new Map();
+    const keysOfId = new Map();   // ID → その ID が付いている問題の種類（同じ ID が、違う問題に付いていないかの確認用）
+    sets.forEach(function (s, si) {
+      const seen = new Set();
+      s.set.questions.forEach(function (q, qi) {
+        if (!q || !q.id) return;
+        const k = contentKey(q);
+        if (!keysOfId.has(q.id)) keysOfId.set(q.id, new Set());
+        keysOfId.get(q.id).add(k);
+        if (seen.has(k)) return;
+        seen.add(k);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push({ si: si, qi: qi, id: q.id });
+      });
+    });
+
+    const time = function (st) { return st && st.last_answered_at ? (Date.parse(st.last_answered_at) || 0) : 0; };
+    const summary = { groups: 0, questions: 0, sets: 0, stats: 0, skipped: 0 };
+    const rewrite = [];   // { si, qi, id }
+
+    groups.forEach(function (members) {
+      const ids = [];
+      members.forEach(function (m) { if (ids.indexOf(m.id) < 0) ids.push(m.id); });
+      if (ids.length < 2) return;
+      // 同じ ID が、違う問題にも付いているものは、触らない
+      if (ids.some(function (id) { return keysOfId.get(id).size > 1; })) { summary.skipped++; return; }
+
+      // 残す ID: 成績があるものの中で、最後に解いた日がいちばん新しいもの。成績が無ければ、一覧の順で最初のもの
+      let canon = ids[0], best = -1;
+      ids.forEach(function (id) { const tm = stats[id] ? time(stats[id]) : -1; if (tm > best) { best = tm; canon = id; } });
+
+      // 書き換えると、同じ問題集の中で ID が重なってしまうときは、触らない
+      const clash = members.some(function (m) {
+        if (m.id === canon) return false;
+        return sets[m.si].set.questions.some(function (q, qi) { return qi !== m.qi && q && q.id === canon; });
+      });
+      if (clash) { summary.skipped++; return; }
+
+      summary.groups++;
+      members.forEach(function (m) { if (m.id !== canon) rewrite.push({ si: m.si, qi: m.qi, id: canon }); });
+
+      // 成績: 最後に解いた日が新しいほうを残して、残す ID に集める（順向き・逆向きそれぞれ）
+      ['', ':swap'].forEach(function (suffix) {
+        let top = null, topTime = -1;
+        ids.forEach(function (id) {
+          const st = stats[id + suffix];
+          if (st && time(st) > topTime) { top = st; topTime = time(st); }
+          else if (st && !top) { top = st; topTime = time(st); }
+        });
+        ids.forEach(function (id) { if (id !== canon && stats[id + suffix]) { delete stats[id + suffix]; summary.stats++; } });
+        if (top) stats[canon + suffix] = top;
+      });
+    });
+
+    const changedSets = new Set();
+    rewrite.forEach(function (r) {
+      sets[r.si].set.questions[r.qi].id = r.id;
+      changedSets.add(r.si);
+      summary.questions++;
+    });
+    summary.sets = changedSets.size;
+    if (dryRun || summary.questions === 0) return { changes: [], result: summary };
+
+    const now = new Date().toISOString();
+    const changes = [];
+    const changedPaths = {};
+    changedSets.forEach(function (si) {
+      sets[si].set.updated_at = now;   // 端末が控えている問題の ID の一覧を、読み直させる
+      changedPaths[sets[si].path] = true;
+      changes.push({ path: SETS_DIR + '/' + sets[si].path + '.json', text: JSON.stringify(sets[si].set, null, 2) });
+    });
+    index.sets.forEach(function (s) { if (changedPaths[s.path]) s.updated_at = now; });
+    index.updated_at = now;
+    changes.push({ path: INDEX_FILE, text: JSON.stringify(index, null, 2) });
+    progress.updated_at = now;
+    changes.push({ path: PROGRESS_FILE, text: JSON.stringify(progress, null, 2) });
+    return { changes: changes, result: summary };
+  });
+  if (out.fail) return { status: out.fail.status, error: out.fail.error };
+  return { status: 200, summary: out.result };
 }
 
 // --- 階層の移動 ---
@@ -663,6 +1016,11 @@ module.exports = async (req, res) => {
         return;
       }
 
+      if (req.query.kind === 'historyall') {
+        res.status(200).json(await readAllHistory());
+        return;
+      }
+
       if (req.query.kind === 'history') {
         const month = typeof req.query.month === 'string' ? req.query.month : '';
         if (!MONTH_RE.test(month)) {
@@ -690,6 +1048,16 @@ module.exports = async (req, res) => {
 
       if (req.query.kind === 'shortcuts') {
         res.status(200).json(await readShortcuts());
+        return;
+      }
+
+      if (req.query.kind === 'shared') {
+        const sp = cleanPath(req.query.path);
+        if (!sp) {
+          res.status(400).json({ error: '問題集の指定が正しくありません。' });
+          return;
+        }
+        res.status(200).json({ shared: await sharedQuestionsOf(sp) });
         return;
       }
 
@@ -826,6 +1194,14 @@ module.exports = async (req, res) => {
         return;
       }
 
+      // すでにある、同じ問題の ID をそろえて、成績を1つにまとめる（dryRun: true で、数だけ確認する）
+      if (body.kind === 'unify') {
+        const r = await unifySameQuestions(body.dryRun === true);
+        if (r.status === 200) res.status(200).json(Object.assign({ dryRun: body.dryRun === true }, r.summary));
+        else res.status(r.status).json({ error: r.error });
+        return;
+      }
+
       // 問題集・フォルダの移動（フォルダ名の変更も同じ。from / to は、問題集やフォルダの「場所」）
       if (body.kind === 'move') {
         const from = cleanPath(body.from);
@@ -924,12 +1300,11 @@ module.exports = async (req, res) => {
           if (entries.length === 0) continue;
 
           const current = await readHistoryMonth(month);
-          const before = current.entries.length;
-          const merged = mergeHistoryEntries(current.entries, entries);
-          if (merged.length === before) continue; // 新規分がなければ書き込まない
+          const m = mergeHistoryEntriesUpdating(current.entries, entries);
+          if (m.added === 0 && m.updated === 0) continue; // 新しい分も、付け足す分もなければ、書き込まない
 
-          added += merged.length - before;
-          const saved = { updated_at: new Date().toISOString(), entries: merged };
+          added += m.added;
+          const saved = { updated_at: new Date().toISOString(), entries: m.entries };
           await writeFile(historyFile(month), JSON.stringify(saved, null, 2), '解答ログを更新（' + month + '）');
         }
         res.status(200).json({ saved: true, added: added });
@@ -975,9 +1350,9 @@ module.exports = async (req, res) => {
         return;
       }
 
-      const questions = body.questions.map(function (q, i) {
+      const questions = body.questions.map(function (q) {
         return {
-          id: (q && q.id) || (Date.now().toString(36) + '-' + i.toString(36)),
+          id: (q && typeof q.id === 'string' && q.id) ? q.id : '',
           question: String((q && q.question) || '').trim(),
           answer: String((q && q.answer) || '').trim(),
           commentary: String((q && q.commentary) || '').trim()
@@ -989,6 +1364,17 @@ module.exports = async (req, res) => {
         return;
       }
 
+      const file = SETS_DIR + '/' + path + '.json';
+      const existing = await readFile(file);
+      const existed = !!existing;
+      if (existed && !body.overwrite) {
+        res.status(409).json({ error: '同じ場所に問題集があります。上書きしますか？', exists: true });
+        return;
+      }
+
+      // 同じ問題は、同じ ID（＝成績を共有）にそろえる
+      const ids = await assignQuestionIds(path, existing ? existing.text : null, questions, { applyToShared: body.applyToShared === true });
+
       const set = {
         title: String(body.title || path.split('/').pop()).trim(),
         path: path,
@@ -997,18 +1383,24 @@ module.exports = async (req, res) => {
         questions: questions
       };
 
-      const file = SETS_DIR + '/' + path + '.json';
-      const existed = !!(await readFile(file));
-      if (existed && !body.overwrite) {
-        res.status(409).json({ error: '同じ場所に問題集があります。上書きしますか？', exists: true });
-        return;
+      // 共有している問題の「すべて直す」があるときは、ほかの問題集と一覧もいっしょに、1回のコミットで書く
+      let propagated = 0, indexWritten = false;
+      const entry = {
+        path: path, title: set.title, allowSwap: set.allowSwap,
+        count: questions.length, updated_at: set.updated_at
+      };
+      if (Object.keys(ids.propagate).length > 0) {
+        propagated = await saveSetWithShared(path, set, ids.propagate, entry, '更新: ' + path + '（共有している問題を、ほかの問題集も含めて）');
+        indexWritten = true;
+      } else {
+        await writeFile(file, JSON.stringify(set, null, 2),
+                        (existed ? '更新: ' : '追加: ') + path + '（' + questions.length + '問）');
       }
-
-      await writeFile(file, JSON.stringify(set, null, 2),
-                      (existed ? '更新: ' : '追加: ') + path + '（' + questions.length + '問）');
+      await copyStatsForDetached(ids.idChanges);
 
       // 書き換えと同時に成績を消す指定があるときだけ消す（既定は、IDが同じなら成績を引き継ぐ）
-      const resetIds = cleanIds(body.resetIds);
+      // 切り離した問題（ID が新しくなった問題）のリセットは、新しい ID に読み替える（古い ID の成績は、ほかの問題集と共有している）
+      const resetIds = cleanIds(body.resetIds).map(function (id) { return ids.idChanges[id] || id; });
       let resetCount = 0;
       if (resetIds.length > 0) {
         const current = await readProgress();
@@ -1020,16 +1412,15 @@ module.exports = async (req, res) => {
       }
 
       // 一覧にも反映する
-      const index = await readIndex();
-      const entry = {
-        path: path, title: set.title, allowSwap: set.allowSwap,
-        count: questions.length, updated_at: set.updated_at
-      };
-      const at = index.sets.findIndex(function (s) { return s.path === path; });
-      if (at >= 0) index.sets[at] = entry; else index.sets.push(entry);
-      await writeIndex(index);
+      if (!indexWritten) {
+        const index = await readIndex();
+        const at = index.sets.findIndex(function (s) { return s.path === path; });
+        if (at >= 0) index.sets[at] = entry; else index.sets.push(entry);
+        await writeIndex(index);
+      }
 
-      res.status(200).json({ saved: true, path: path, count: questions.length, updated: existed, reset: resetCount });
+      res.status(200).json({ saved: true, path: path, count: questions.length, updated: existed, reset: resetCount,
+                             shared: ids.shared, detached: ids.detached, idChanges: ids.idChanges, propagated: propagated });
       return;
     }
 

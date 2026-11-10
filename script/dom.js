@@ -42,6 +42,7 @@ const btnMoveCancel = document.getElementById('btn-move-cancel');
 const btnMoveOk = document.getElementById('btn-move-ok');
 const manageTree = document.getElementById('manage-tree');
 const manageMessage = document.getElementById('manage-message');
+const btnUnify = document.getElementById('btn-unify');
 
 const btnEditBack = document.getElementById('btn-edit-back');
 const btnEditScrollTop = document.getElementById('btn-edit-scroll-top');
@@ -61,6 +62,8 @@ const editCount = document.getElementById('edit-count');
 const editList = document.getElementById('edit-list');
 const btnEditResetAll = document.getElementById('btn-edit-reset-all');
 const btnEditSave = document.getElementById('btn-edit-save');
+const editSharedOption = document.getElementById('edit-shared-option');
+const editApplyShared = document.getElementById('edit-apply-shared');
 const editMessage = document.getElementById('edit-message');
 
 const uploadPath = document.getElementById('upload-path');
@@ -87,7 +90,7 @@ const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const checkSrsSort = document.getElementById('check-srs-sort');
 const checkRandom = document.getElementById('check-random');
-const inputGroupSize = document.getElementById('input-group-size');
+const inputWindowSize = document.getElementById('input-window-size');
 const inputQuestionLimit = document.getElementById('input-question-limit');
 const inputMaxProbability = document.getElementById('input-max-probability');
 const questionFontInput = document.getElementById('question-font-input');
@@ -136,6 +139,11 @@ const studyTimeList = document.getElementById('study-time-list');
 const settingsModal = document.getElementById('settings-modal');
 const btnToggleSpread = document.getElementById('btn-toggle-spread');
 const btnOpenSettings = document.getElementById('btn-open-settings');
+const btnTune = document.getElementById('btn-tune');
+const btnTuneApply = document.getElementById('btn-tune-apply');
+const btnTuneRevert = document.getElementById('btn-tune-revert');
+const tuneCurrent = document.getElementById('tune-current');
+const tuneResult = document.getElementById('tune-result');
 const btnOpenSettingsHome = document.getElementById('btn-open-settings-home');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const appHeader = document.getElementById('app-header');
@@ -152,6 +160,10 @@ const btnEditQuestionTest = document.getElementById('btn-edit-question-test');
 const btnEditQuestionReview = document.getElementById('btn-edit-question-review');
 const questionEditModal = document.getElementById('question-edit-modal');
 const qeditHeadings = document.getElementById('qedit-headings');
+const qeditSwapNote = document.getElementById('qedit-swap-note');
+const qeditSharedBox = document.getElementById('qedit-shared-box');
+const qeditSharedList = document.getElementById('qedit-shared-list');
+const qeditApplyShared = document.getElementById('qedit-apply-shared');
 const qeditQuestion = document.getElementById('qedit-question');
 const qeditAnswer = document.getElementById('qedit-answer');
 const qeditAnswerHint = document.getElementById('qedit-answer-hint');
@@ -168,11 +180,6 @@ const btnSubmitTest = document.getElementById('btn-submit-test');
 
 const btnBackToImport = document.getElementById('btn-back-to-import');
 
-const testGroupBarContainer = document.getElementById('test-group-bar-container');
-const testGroupTextContainer = document.getElementById('test-group-text-container');
-const testGroupBarCurrent = document.getElementById('test-group-bar-current');
-const testGroupBarConfirmed = document.getElementById('test-group-bar-confirmed');
-const testGroupText = document.getElementById('test-group-text');
 
 const testProgressBarCurrent = document.getElementById('test-progress-bar-current');
 const testProgressBarConfirmed = document.getElementById('test-progress-bar-confirmed');
@@ -185,11 +192,6 @@ const reviewModelAnswerList = document.getElementById('review-model-answer-list'
 const reviewCommentary = document.getElementById('review-commentary');
 const reviewCommentaryBox = document.getElementById('review-commentary-box');
 
-const reviewGroupBarContainer = document.getElementById('review-group-bar-container');
-const reviewGroupTextContainer = document.getElementById('review-group-text-container');
-const reviewGroupBarCurrent = document.getElementById('review-group-bar-current');
-const reviewGroupBarConfirmed = document.getElementById('review-group-bar-confirmed');
-const reviewGroupText = document.getElementById('review-group-text');
 
 const reviewProgressBarCurrent = document.getElementById('review-progress-bar-current');
 const reviewProgressBarConfirmed = document.getElementById('review-progress-bar-confirmed');

@@ -74,7 +74,10 @@ function computeSnapshot(byPath, stats, atMs) {
   libraryIndex.sets.forEach(function (s) { if (s.allowSwap) swappable[s.path] = true; });
 
   let total = 0, knowledge = 0;
+  const seen = {};   // 同じ問題（ID が同じ）が、複数の問題集に入っているときは、1問として数える
   const count = function (id) {
+    if (seen[id]) return;
+    seen[id] = true;
     total++;
     const st = stats[id];
     // 解いたことのない問題は 0。calculateProbability が読むのは、この2つだけ

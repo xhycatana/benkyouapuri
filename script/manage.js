@@ -252,6 +252,8 @@ async function openEditor(set) {
   editHeadings.innerHTML = '';
   editList.innerHTML = '';
   editCount.textContent = '';
+  editSharedOption.classList.add('hidden');
+  editApplyShared.checked = false;
   btnEditSave.disabled = true;
   btnEditResetAll.disabled = true;
   setMessage(editMessage, '読み込み中…');
@@ -276,6 +278,14 @@ async function openEditor(set) {
     btnEditResetAll.disabled = false;
     setMessage(editMessage, '');
     renderEdit();
+    // ほかの問題集にも入っている問題（共有）を、あとから表示する（問い合わせに少し時間がかかるため）
+    const opened = editState;
+    loadSharedInfo(set.path).then(function (info) {
+      if (editState !== opened) return;
+      editState.shared = info;
+      editSharedOption.classList.toggle('hidden', Object.keys(info).length === 0);
+      renderEditList();
+    }).catch(function () {});
   } catch (err) {
     if (!err.unauthorized) setMessage(editMessage, err.message, 'error');
   }
@@ -416,6 +426,12 @@ function renderEditList() {
     if (q.reset) foot.appendChild(makeEl('span', 'ml-2 font-bold text-red-600', '保存すると成績をリセット'));
     if (q.removed) foot.appendChild(makeEl('span', 'ml-2 font-bold text-red-600', '保存すると削除'));
     if (q.isNew) foot.appendChild(makeEl('span', 'ml-2 font-bold text-slate-600', '新規'));
+    const sharedWith = editState.shared && !q.isNew ? editState.shared[q.id] : null;
+    if (sharedWith && sharedWith.length > 0) {
+      const badge = makeEl('span', 'ml-2 font-bold text-slate-600', '共有 ' + sharedWith.length + '冊');
+      badge.title = '同じ問題が入っている問題集: ' + sharedWith.map(function (s) { return s.title; }).join('、');
+      foot.appendChild(badge);
+    }
 
     const resetBtn = makeEl('button', 'ml-auto px-2 h-6 border text-[10px] focus:outline-none ' +
       (q.reset ? 'bg-black text-white border-black' : 'border-slate-300 text-slate-500 hover:border-black hover:text-black'), '成績リセット');
@@ -554,6 +570,21 @@ btnEditResetAll.addEventListener('click', async function () {
 });
 
 // --- 保存 ---
+// 切り離した問題（ID が新しくなった問題）の成績を、端末の控えにも写す（サーバーが、成績のファイルに同じことをしている）
+function applyIdChanges(idChanges) {
+  if (!idChanges) return;
+  let changed = false;
+  Object.keys(idChanges).forEach(function (oldId) {
+    ['', ':swap'].forEach(function (suffix) {
+      if (progressStats[oldId + suffix] && !progressStats[idChanges[oldId] + suffix]) {
+        progressStats[idChanges[oldId] + suffix] = Object.assign({}, progressStats[oldId + suffix]);
+        changed = true;
+      }
+    });
+  });
+  if (changed) writeLocalProgress();
+}
+
 async function saveEdit() {
   if (!editState) return;
   const title = editTitle.value.trim();
@@ -583,6 +614,7 @@ async function saveEdit() {
     allowSwap: editAllowSwap.checked,
     overwrite: true,
     resetIds: resetIds,
+    applyToShared: !editSharedOption.classList.contains('hidden') && editApplyShared.checked,   // 共有している問題を、ほかの問題集も含めて直すか
     questions: kept.map(function (q) {
       return { id: q.id, question: q.lines.join('\n'), answer: q.answer, commentary: q.commentary };
     })
@@ -605,12 +637,22 @@ async function saveEdit() {
     editState.questions = kept;
     editState.questions.forEach(function (q) { q.reset = false; q.isNew = false; });
     editDirty = false;
-    setMessage(editMessage, '保存しました（' + r.count + '問' + (r.reset ? '、成績をリセット ' + resetIds.length + '問' : '') + '）。', 'ok');
+    applyIdChanges(r.idChanges);
+    setMessage(editMessage, '保存しました（' + r.count + '問' + (r.reset ? '、成績をリセット ' + resetIds.length + '問' : '') + '）。' +
+      (r.propagated > 0 ? 'ほかの ' + r.propagated + ' 冊の問題集の、同じ問題も直しました。' : '') +
+      (r.detached > 0 ? r.detached + '問は、ほかの問題集と共有していた成績から切り離しました（この問題集の分は、それまでの成績を引き継ぎます）。' : '') +
+      (r.shared > 0 ? r.shared + '問は、すでにある同じ問題なので、成績を共有します。' : ''), 'ok');
     renderEdit();
     await loadLibrary();
     // 一覧を読み直すと、手元の set が新しいものに置き換わる
     const fresh = libraryIndex.sets.find(function (s) { return s.path === payload.path; });
     if (fresh) editState.set = fresh;
+    if (r.detached > 0 || r.shared > 0) {
+      // サーバーが ID を付け替えたので、編集画面の問題の ID を読み直す（メッセージは残す）
+      const keep = editMessage.textContent, keepClass = editMessage.className;
+      if (fresh) await openEditor(fresh);
+      editMessage.textContent = keep; editMessage.className = keepClass;
+    }
   } catch (err) {
     Object.keys(backup).forEach(function (key) { progressStats[key] = backup[key]; });
     if (resetIds.length > 0) writeLocalProgress();
@@ -643,14 +685,47 @@ btnEditBack.addEventListener('click', function () {
 // 問題集を読み直して該当の問題だけを差し替え、保存する（id は変えないので成績は引き継がれる）。
 // 逆向き（答えを問題として出す）の問題は、元の問題集の側から直す。
 
+// 出題中の✎で書き換える問題。逆向きの出題のときは、元の問題を書き換える
+// （元の問題を編集するときと同じ画面を出す。逆向きの問題は、保存したあと、元の問題から作り直す）。
+// 逆向きのときに返すのは、元の問題の中身を持つ、書き換え用のもの（swapView が true）
 function currentQuestionForEdit() {
   const q = currentList[currentIndex];
   if (!q) return null;
-  if (!q.setPath || /:swap$/.test(q.id)) {
-    alert('この問題は、ここでは書き換えられません（逆向きの出題、またはサンプルです）。ホーム画面の「管理」から、元の問題集を編集してください。');
+  if (!q.setPath) {
+    alert('この問題は、ここでは書き換えられません（サンプルです）。ホーム画面の「管理」から、元の問題集を編集してください。');
     return null;
   }
-  return q;
+  if (!q.swapOf) return q;
+  return { id: q.swapOf, setPath: q.setPath, question: q.origin.question, answer: q.origin.answer, commentary: q.origin.commentary || '', swapView: true };
+}
+
+// 書き換えた内容を、出題中の問題に反映する。元の問題（oldId）と、その逆向きの問題（oldId:swap）の、両方が出題に入っていることがある。
+// 逆向きの問題は、元の問題の新しい内容から作り直す。切り離されて id が新しくなったとき（newId が違うとき）は、id と、id ごとの記録を付け替える
+function applyQuestionEditToSession(oldId, newId, newQuestion, newAnswer, newCommentary, answerChanged) {
+  const all = new Set();
+  [originalList, currentList, wrongQuestions].forEach(function (list) { list.forEach(function (x) { all.add(x); }); });
+  pendingQueue.forEach(function (x) { all.add(x); });
+  all.forEach(function (o) {
+    if (o.id === oldId) {
+      o.question = newQuestion; o.answer = newAnswer; o.commentary = newCommentary;
+    } else if (o.id === oldId + ':swap') {
+      o.question = splitAnswers(newAnswer).join('／');
+      o.answer = newQuestion.replace(/／/g, '／／');
+      o.commentary = newCommentary;
+      o.origin = { question: newQuestion, answer: newAnswer, commentary: newCommentary };
+    } else {
+      return;
+    }
+    if (newId !== oldId) { o.id = (/:swap$/.test(o.id)) ? newId + ':swap' : newId; if (o.swapOf) o.swapOf = newId; }
+  });
+  if (newId !== oldId) {
+    ['', ':swap'].forEach(function (suffix) {
+      [userAnswers, userHasDrawn, shownProbability, multiAnswerProgress, answeredThisSession].forEach(function (m) {
+        if (Object.prototype.hasOwnProperty.call(m, oldId + suffix)) { m[newId + suffix] = m[oldId + suffix]; delete m[oldId + suffix]; }
+      });
+    });
+  }
+  if (answerChanged) { delete multiAnswerProgress[newId]; delete multiAnswerProgress[newId + ':swap']; }   // 答えの項目が変わるので、正解済みの記録は使えない
 }
 
 function openQuestionEdit() {
@@ -664,9 +739,30 @@ function openQuestionEdit() {
   qeditAnswer.value = q.answer;
   qeditCommentary.value = q.commentary || '';
   qeditAnswerHint.classList.add('hidden');
+  qeditSwapNote.classList.toggle('hidden', !q.swapView);   // 逆向きの出題のときは、元の問題を編集することを知らせる
+  qeditSharedBox.classList.add('hidden');
+  qeditApplyShared.checked = false;
   setMessage(qeditMessage, '');
   btnQeditSave.disabled = false;
   questionEditModal.classList.remove('hidden');
+  showSharedInfoInModal(q);
+}
+
+// この問題が、ほかの問題集にも入っているとき（ID が同じ）は、そう表示して、「すべて直す」を選べるようにする。
+// 問い合わせには少し時間がかかるので、編集画面は先に出して、分かったら、あとから出す
+let qeditSharedToken = 0;
+async function showSharedInfoInModal(q) {
+  const token = ++qeditSharedToken;
+  try {
+    const info = await loadSharedInfo(q.setPath);
+    if (token !== qeditSharedToken || questionEditModal.classList.contains('hidden')) return;
+    const others = info[q.id];
+    if (!others || others.length === 0) return;
+    qeditSharedList.textContent = others.map(function (s) { return s.title; }).join('、');
+    qeditSharedBox.classList.remove('hidden');
+  } catch (err) {
+    // 分からなくても、書き換えはできる（この問題集の分だけが直る）
+  }
 }
 
 function closeQuestionEdit() {
@@ -693,8 +789,10 @@ async function saveQuestionEdit() {
     return;
   }
 
+  const applyToShared = !qeditSharedBox.classList.contains('hidden') && qeditApplyShared.checked;   // 共有している問題を、ほかの問題集も含めて直すか
   btnQeditSave.disabled = true;
   setMessage(qeditMessage, '保存中…');
+  let saved = null;
   try {
     await enqueueManage(async function () {
       const set = await api('/api/questions?path=' + encodeURIComponent(q.setPath));
@@ -703,11 +801,12 @@ async function saveQuestionEdit() {
       target.question = newQuestion;
       target.answer = newAnswer;
       target.commentary = newCommentary;
-      await postJSON({
+      saved = await postJSON({
         path: q.setPath,
         title: set.title,
         allowSwap: !!set.allowSwap,
         overwrite: true,
+        applyToShared: applyToShared,
         questions: set.questions
       });
     });
@@ -717,20 +816,24 @@ async function saveQuestionEdit() {
     return;
   }
 
+  // ほかの問題集と ID を共有していた問題の文を直すと、この問題集の分は、新しい ID に切り離される。出題中の問題の ID も合わせる
   const answerChanged = newAnswer !== q.answer;
-  q.question = newQuestion;
-  q.answer = newAnswer;
-  q.commentary = newCommentary;
-  if (answerChanged) delete multiAnswerProgress[q.id];   // 答えの項目が変わるので、正解済みの記録は使えない
+  let newId = q.id;
+  if (saved && saved.idChanges && saved.idChanges[q.id]) {
+    newId = saved.idChanges[q.id];
+    applyIdChanges(saved.idChanges);
+  }
+  applyQuestionEditToSession(q.id, newId, newQuestion, newAnswer, newCommentary, answerChanged);
   closeQuestionEdit();
 
-  // 画面の表示を直す。書きかけの答案は残す
-  if (currentPhase === 'test') {
-    testQuestion.innerText = q.question;
-    testAnswerCountHint.textContent = answerCountHintText(q);
+  // 画面の表示を直す。書きかけの答案は残す（いま出ているのは、元の問題か、その逆向きの問題のどちらか）
+  const shown = currentList[currentIndex];
+  if (shown && currentPhase === 'test') {
+    testQuestion.innerText = shown.question;
+    testAnswerCountHint.textContent = answerCountHintText(shown);
     placePageDivider();
-  } else if (currentPhase === 'review') {
-    userAnswers[q.id] = collectAnswerPages();
+  } else if (shown && currentPhase === 'review') {
+    userAnswers[shown.id] = collectAnswerPages();
     showReviewItem();
   }
 }
@@ -789,9 +892,9 @@ function removeQuestionFromSession(q) {
   // いまの位置より前にある分だけ、位置を詰める
   currentIndex -= currentList.slice(0, currentIndex).filter(function (x) { return gone[x.id]; }).length;
   drop(currentList);
+  drop(pendingQueue);
   drop(wrongQuestions);
   drop(originalList);
-  studyGroups.forEach(drop);
   Object.keys(gone).forEach(function (id) {
     delete userAnswers[id];
     delete userHasDrawn[id];
@@ -805,7 +908,7 @@ function removeQuestionFromSession(q) {
   } else if (currentPhase === 'test') {
     // 最後の問題だった。残りがあれば丸付けへ、残りが無ければ次のグループ（無ければ終わり）へ
     if (currentList.length > 0) transitionPhase(function () { switchPhase('review'); });
-    else transitionPhase(function () { goToNextGroupOrFinish(); });
+    else transitionPhase(function () { startNextRound([]); });   // この周の問題が無くなった。補充の控えがあれば、そこから次の周を始める（無ければ終わり）
   } else {
     transitionPhase(function () { evaluateRoundResult(); });
   }
@@ -1019,3 +1122,31 @@ async function renameFolder(folder, input) {
   const ok = await runMove(folder.key, to, 'フォルダ名を変更中');
   if (!ok) input.value = folder.name;
 }
+
+
+// --- 同じ問題をまとめる ---
+// すでにある、同じ問題（問題文と答えが同じ）の ID をそろえて、成績を1つにまとめる。まず数だけを確かめて、確認してから行う
+btnUnify.addEventListener('click', async function () {
+  btnUnify.disabled = true;
+  setMessage(manageMessage, '調べています…');
+  try {
+    const dry = await enqueueManage(function () { return postJSON({ kind: 'unify', dryRun: true }); });
+    if (dry.questions === 0) {
+      setMessage(manageMessage, 'まとめる問題はありません。' + (dry.skipped > 0 ? '（' + dry.skipped + '組は、安全のため触りませんでした）' : ''), 'ok');
+      return;
+    }
+    if (!confirm('同じ問題が ' + dry.groups + ' 組あります（' + dry.sets + ' 冊の問題集の、' + dry.questions + ' 問を、同じ問題にそろえます）。' +
+                 String.fromCharCode(10) + '成績が両方にあるものは、最後に解いた日が新しいほうを残します。よろしいですか。')) {
+      setMessage(manageMessage, '');
+      return;
+    }
+    const done = await enqueueManage(function () { return postJSON({ kind: 'unify' }); });
+    await loadLibrary();   // 一覧と成績を読み直す
+    renderManage();
+    setMessage(manageMessage, 'まとめました（' + done.groups + ' 組、' + done.sets + ' 冊の問題集の ' + done.questions + ' 問）。', 'ok');
+  } catch (err) {
+    if (!err.unauthorized) setMessage(manageMessage, 'まとめられませんでした: ' + err.message, 'error');
+  } finally {
+    btnUnify.disabled = false;
+  }
+});

@@ -10,13 +10,45 @@ const FIRST_INTERVAL_DAYS = 1.0;   // 初めて正解したときの寿命
 // これは設定ではなく、式の連続性を保つためだけの固定値（1分）。
 const MIN_LIFESPAN_DAYS = 1 / 1440;
 
+// --- 記憶の式（アプリの出題・表示・更新と、解答履歴からの自動調整（tune.js）が、同じものを使う） ---
+// 思い出せる確率: R = (1 + q·t/L)^(-1/q)  （t: 経過日数、L: 記憶の寿命、q: 曲線の裾の長さ shape）
+//   q が 0 に近づくと R = exp(-t/L) になる。つまり q = 0 は、これまでの式そのもの。
+//   q = 1 なら R = 1/(1 + t/L)、q = 2 なら R = 1/√(1 + 2t/L) のように、裾が長くなる（人の忘れ方は、指数より裾が長いことが多い）
+function srsRetrievability(elapsedDays, lifespan, shape) {
+  const x = elapsedDays / lifespan;
+  if (!(shape > 1e-6)) return Math.exp(-x);
+  return Math.pow(1 + shape * x, -1 / shape);
+}
+
+// その対数（出題の並べ替えに使う。確率が 0 に潰れても、区別できるように）
+function srsLogRetrievability(elapsedDays, lifespan, shape) {
+  const x = elapsedDays / lifespan;
+  if (!(shape > 1e-6)) return -x;
+  return -Math.log(1 + shape * x) / shape;
+}
+
+// 正解したときに、寿命を何倍にするか。r は、そのときの思い出せる確率。
+//   spacing = 0 なら、いつも ease 倍（これまでと同じ）。
+//   spacing > 0 なら、忘れかけて（r が低いとき）正解したほど大きく伸び、覚えているうちの正解は、あまり伸びない（間隔の効果）。
+//   r = 0.6 のとき ease 倍になるようにそろえてある。
+function srsSpacingFactor(r, ease, spacing) {
+  if (!(spacing > 1e-9)) return ease;
+  const f = 1 + (ease - 1) * Math.pow(Math.max(1 - r, 1e-6) / 0.4, spacing);
+  return Math.min(10, Math.max(1, f));
+}
+
 // 歯車の中の設定。一度決めたら普段は変えないものを置く。
 // ホーム画面に残す「出題する上限」は、空いた時間の長さで毎回変わるので別扱い。
 let memorySettings = {
   ease: 2.5,          // 正解したとき寿命を何倍にするか
   lapseKeep: 0.2,     // 間違えたとき、以前の寿命をどれだけ残すか
   retryBoost: 1.2,    // 間違えた直後の解き直しで正解したとき、寿命を何倍にするか（ease より小さくする）
-  groupSize: 0        // 何問ずつに区切るか（長時間の勉強用）。0 で区切らない
+  // 次の3つは、解答履歴からの自動調整（歯車の中の「記憶モデルの自動調整」）で決める。既定のままなら、これまでと同じ式になる
+  retryPenalty: 1.0,  // 解き直しで、また間違えるたびに、寿命に掛ける倍率（1 は、解き直しで間違えても、何も変えない）。覚えにくい問題ほど、寿命が短くなる
+  firstInterval: 1.0, // 初めて正解したときの寿命（日）
+  shape: 0,           // 忘却曲線の裾の長さ。0 は R = exp(-t/寿命)（これまでと同じ）。大きいほど、時間が経っても確率がゆっくりしか下がらない
+  spacing: 0,         // 間隔の効果。0 は、正解したとき、いつも ease 倍。大きいほど、忘れかけてから正解したときに大きく伸び、すぐ後の正解では、あまり伸びない
+  windowSize: 0       // 1周の上限。0 で上限なし（正解した分だけ、まだ出していない問題を補充する）
 };
 
 try {
@@ -44,10 +76,10 @@ function saveMemorySettings() {
 function forgettingExponent(q, atMs) {
   if (!q.last_answered_at) return -Infinity;
 
-  const lifespan = (q.lifespan > 0) ? q.lifespan : FIRST_INTERVAL_DAYS;
+  const lifespan = (q.lifespan > 0) ? q.lifespan : memorySettings.firstInterval;
   const elapsedMs = Math.max(0, (atMs === undefined ? Date.now() : atMs) - Date.parse(q.last_answered_at));
   const elapsedDays = elapsedMs / (1000 * 60 * 60 * 24);
-  return -elapsedDays / lifespan;
+  return srsLogRetrievability(elapsedDays, lifespan, memorySettings.shape);
 }
 
 function calculateProbability(q, atMs) {
@@ -104,19 +136,35 @@ function updateSrsMetrics(question, isCorrect) {
     // 間違えた直後の解き直し（同じセッションで2回目以降）。
     // 数十秒前に答えを見ただけなので、通常の正解（ease）と同じようには伸ばさない。
     // ただし、正解できたこと自体は多少は覚えている証拠なので、それより小さい倍率で少しだけ伸ばす。
-    // 履歴ログには残さない（このログは実際に間隔を空けて解いたときの記録として使うため）。
-    if (isCorrect && question.lifespan > 0) {
-      question.lifespan *= memorySettings.retryBoost;
-      recordProgress(question);
+    // 履歴ログには、解き直しの正解・不正解そのものは残さない（このログは実際に間隔を空けて解いたときの記録として使うため）。
+    // ただし、解き直しで「何回また間違えたか」は、その問題の覚えにくさの証拠になる。数十秒前に答えを見ても解けなかったのだから。
+    // そこで、また間違えた回数を数えて、最後に正解したとき、寿命に反映し（retryPenalty）、最初の解答の履歴に回数だけを付け足す。
+    if (!isCorrect) {
+      retryFails[question.id] = (retryFails[question.id] || 0) + 1;
+      return;
     }
+    if (question.lifespan > 0) {
+      const fails = retryFails[question.id] || 0;
+      question.lifespan *= memorySettings.retryBoost * Math.pow(memorySettings.retryPenalty, fails);
+      recordProgress(question);
+      const first = lastHistoryEntry[question.id];
+      if (first && first.correct === false && fails > 0) {
+        first.retries = fails;
+        recordHistoryEntry(Object.assign({}, first));   // 同じ id の記録を、回数つきで、もう一度送る（サーバーが置き換える）
+      }
+    }
+    retryFails[question.id] = 0;
     return;
   }
   answeredThisSession[question.id] = true;
 
+  // 更新の前に、いま思い出せると予測していた確率（間隔の効果に使う）。初めて解く問題には無い
+  const rBefore = (question.last_answered_at && question.lifespan > 0) ? calculateProbability(question) : null;
+
   // 全履歴ログ（あとで忘却曲線のパラメータを学習するときに使う）。
   // 集計を更新する前の値を記録する＝そのとき何を予測していたかを残す。
   const now = new Date().toISOString();
-  recordHistoryEntry({
+  const historyEntry = {
     id: makeHistoryEntryId(),
     question_id: question.id,
     answered_at: now,
@@ -125,15 +173,17 @@ function updateSrsMetrics(question, isCorrect) {
     elapsed_days: question.last_answered_at
       ? Math.max(0, (Date.parse(now) - Date.parse(question.last_answered_at)) / (1000 * 60 * 60 * 24))
       : null
-  });
+  };
+  recordHistoryEntry(historyEntry);
+  lastHistoryEntry[question.id] = Object.assign({}, historyEntry);   // 送信待ちの記録とは別物にしておく（あとで retries を足すため）
 
   if (isCorrect) {
     question.correct_count = (question.correct_count || 0) + 1;
     const previous = question.lifespan;
     // 正解したら、少なくとも初回間隔ぶんは空ける
     question.lifespan = (previous > 0 && question.last_answered_at)
-      ? Math.max(previous * memorySettings.ease, FIRST_INTERVAL_DAYS)
-      : FIRST_INTERVAL_DAYS;
+      ? Math.max(previous * srsSpacingFactor(rBefore, memorySettings.ease, memorySettings.spacing), memorySettings.firstInterval)
+      : memorySettings.firstInterval;
   } else {
     question.incorrect_count = (question.incorrect_count || 0) + 1;
     // 間違えても、以前の寿命の一部は残す。
@@ -174,9 +224,9 @@ setupSlider('retry-boost-input', 'retry-boost-val', val => {
   saveMemorySettings();
   return val + ' 倍';
 });
-// 区切りの数はつまみではなく数値入力なので、個別に受け取る
-inputGroupSize.addEventListener('input', function () {
-  memorySettings.groupSize = Math.max(0, parseInt(inputGroupSize.value, 10) || 0);
+// 1周の上限はつまみではなく数値入力なので、個別に受け取る
+inputWindowSize.addEventListener('input', function () {
+  memorySettings.windowSize = Math.max(0, parseInt(inputWindowSize.value, 10) || 0);
   saveMemorySettings();
 });
 
@@ -187,7 +237,7 @@ function applyMemorySettingsToUI() {
     ['lapse-input', 'lapse-val', Math.round(memorySettings.lapseKeep * 100), ' %'],
     ['retry-boost-input', 'retry-boost-val', memorySettings.retryBoost, ' 倍']
   ];
-  inputGroupSize.value = memorySettings.groupSize;
+  inputWindowSize.value = memorySettings.windowSize;
 
   pairs.forEach(function (p) {
     const input = document.getElementById(p[0]);

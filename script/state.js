@@ -16,6 +16,8 @@ let wrongQuestions = [];       // 間違えた問題リスト
 let reviewEndsSession = false;
 let shownProbability = {};     // 出題画面で見せた記憶予測確率（問題ID→確率）。丸付けでも同じ値を見せる（時間が経つと変わってしまうため）
 
+let retryFails = {};           // このセッションで、解き直しでまた間違えた回数（問題の id ごと）
+let lastHistoryEntry = {};     // このセッションで最後に記録した、最初の解答の履歴（解き直しの回数を、あとから付け足すため）
 let answeredThisSession = {};  // このセッションで既に採点した問題（重複更新の防止）
 
 let currentAnswerItems = [];        // 丸つけ中の答えを「／」で分けたもの（1件なら通常表示）
@@ -32,10 +34,9 @@ let currentIndex = 0;         // 現在のインデックス
 let isTransitioning = false;
 let isBlanked = false;     // 切り替えガード
 
-let settingGroupSize = 0;      // ループ分割数
 let settingQuestionLimit = 0;  // 出題する上限。0 なら全部
-let studyGroups = [];          // グループ配列
-let currentGroupIndex = 0;     // 現在のグループ番号
+let settingWindowSize = 0;     // 1周の上限。0 なら上限なし。選ばれた問題のうち、1周に出す最大の数（正解した分だけ、まだ出していない問題が補充される）
+let pendingQueue = [];         // まだ出していない問題（補充の控え。優先順のまま）
 
 let currentPenColor = '#000000';
 let currentPenWidth = 1.75;
@@ -43,8 +44,6 @@ let currentPenWidth = 1.75;
 // タスクバー進捗キャッシュ
 let lastTestConfirmedPercent = -1, lastTestCurrentPercent = -1;
 let lastReviewConfirmedPercent = -1, lastReviewCurrentPercent = -1;
-let lastTestGroupConfirmedPercent = -1, lastTestGroupCurrentPercent = -1;
-let lastReviewGroupConfirmedPercent = -1, lastReviewGroupCurrentPercent = -1;
 
 // サンプルデータ（動作確認用）。
 // わざと正解数・不正解数・寿命をバラバラに仕込んであり、忘却曲線による並べ替えが

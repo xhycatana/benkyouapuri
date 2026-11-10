@@ -116,7 +116,8 @@ async function saveUpload(overwrite) {
     });
     uploadMessage.className = 'text-xs text-green-700';
     uploadMessage.textContent = (r.updated ? '上書き保存しました: ' : '保存しました: ') +
-                                r.path + '（' + r.count + '問）';
+                                r.path + '（' + r.count + '問）' +
+                                (r.shared > 0 ? '。' + r.shared + '問は、すでにある同じ問題なので、成績を共有します' : '');
     uploadCsv.value = '';
     await loadLibrary();
   } catch (err) {

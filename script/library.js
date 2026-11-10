@@ -143,6 +143,17 @@ function writeLibraryCache() {
 // 成績の読み込み（通信中のもの）。成績が要るのは、解き始めるときと、記憶の推移を計算するときだけ
 let progressLoading = null;
 
+// その問題集の問題のうち、ほかの問題集にも入っているもの（ID が同じ）。{ ID: [{ path, title }] }。問題集ごとに控える
+// （問題集を書き換えたあとは、loadLibrary で控えを捨てる）
+let sharedInfoCache = {};
+function loadSharedInfo(path) {
+  if (!sharedInfoCache[path]) {
+    sharedInfoCache[path] = api('/api/questions?kind=shared&path=' + encodeURIComponent(path)).then(function (r) { return (r && r.shared) || {}; });
+    sharedInfoCache[path].catch(function () { delete sharedInfoCache[path]; });   // 失敗したら、控えない
+  }
+  return sharedInfoCache[path];
+}
+
 // silent が true のときは、起動直後の自動読み込みなので、入力欄を勝手に出さない。
 // 「再読み込み」を押すなど、本人が明示的に操作したときだけ自動で聞く。
 async function loadLibrary(silent) {
@@ -160,6 +171,7 @@ async function loadLibrary(silent) {
   } else {
     setTreeMessage('読み込み中…');
   }
+  sharedInfoCache = {};   // 問題集が書き換わっていることがあるので、共有の確認の控えは捨てる
 
   try {
     // 一覧・成績・ショートカットは、互いに待たずに、同時に取りにいく
@@ -418,12 +430,17 @@ function updateSelectionUI() {
 // （「走る／経営する」のように）。元の問題文はその答えになる。
 // id は元と変えて、正解・不正解の記録（記憶予測）を順方向とは別に持つ
 // （逆向きを覚えていることと、順向きを覚えていることは別なので）。
-function makeSwappedQuestion(q) {
+// setPath・swapOf・origin は、出題中の✎で「元の問題」を書き換えるためのもの
+// （逆向きの問題は、元の問題から作るその場限りの問題。書き換えは、元の問題に対して行い、逆向きの問題は作り直す）
+function makeSwappedQuestion(q, setPath) {
   return {
     id: q.id + ':swap',
     question: splitAnswers(q.answer).join('／'),
     answer: String(q.question).replace(/／/g, '／／'),
-    commentary: q.commentary || ''
+    commentary: q.commentary || '',
+    setPath: setPath || null,
+    swapOf: q.id,
+    origin: { question: String(q.question), answer: String(q.answer), commentary: q.commentary || '' }
   };
 }
 
@@ -445,13 +462,20 @@ async function startFromSelection() {
       const sel = selection[p];
       const set = sets[i];
       if (!Array.isArray(set.questions)) continue;
-      // 出題中に問題を書き換えられるよう、どの問題集の問題かを持たせる（逆向きは書き換えの対象外）
+      // 出題中に問題を書き換えられるよう、どの問題集の問題かを持たせる（逆向きも、元の問題を書き換える）
       if (sel.normal) merged = merged.concat(set.questions.map(function (q) {
         return Object.assign({}, q, { setPath: p });
       }));
-      if (sel.swap) merged = merged.concat(set.questions.map(makeSwappedQuestion));
+      if (sel.swap) merged = merged.concat(set.questions.map(function (q) { return makeSwappedQuestion(q, p); }));
     }
     if (merged.length === 0) throw new Error('選んだ問題集に問題が入っていません。');
+    // 同じ問題（ID が同じ）が、選んだ問題集の2冊以上に入っているときは、1回だけ出す（成績を共有しているため）
+    const seenIds = {};
+    merged = merged.filter(function (q) {
+      if (seenIds[q.id]) return false;
+      seenIds[q.id] = true;
+      return true;
+    });
     startLearning(merged);
   } catch (err) {
     if (!err.unauthorized) alert(err.message);
@@ -464,7 +488,8 @@ async function startFromSelection() {
 async function deleteSet(set) {
   const label = (set.title || set.path) + '（' + (set.count || 0) + '問）';
   if (!confirm(label + ' を削除します。よろしいですか。' + String.fromCharCode(10) +
-               '解答履歴は残るので、同じ問題集を入れ直せば成績も戻ります。')) return;
+               '成績の記録は残りますが、同じ問題集を入れ直すと新しい問題として扱われるので、成績は戻りません' + String.fromCharCode(10) +
+               '（ほかの問題集に同じ問題が入っていれば、その成績を引き継ぎます）。')) return;
   try {
     await saveOrderNow();   // 保存待ちの並び順を先に送る（読み直したときに古い並びに戻らないように）
     await enqueueManage(function () {

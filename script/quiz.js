@@ -122,7 +122,7 @@ window.addEventListener('resize', fitScreenMargins);
 function transitionPhase(actionAfterFadeOut) {
   // すでに暗転中（action の実行中）に呼ばれた場合は、さらに演出を重ねずにその場で実行する。
   // （この分岐がないと isTransitioning ガードに弾かれ、
-  //   全問終了時・最終グループのスキップ時にホーム画面へ戻らなくなる）
+  //   全問終了時にホーム画面へ戻らなくなる）
   if (isBlanked) {
     actionAfterFadeOut();
     return;
@@ -154,41 +154,15 @@ function transitionPhase(actionAfterFadeOut) {
 
 // 進捗タスクバー反映
 function updateTaskProgress(mode) {
-  const totalGroups = studyGroups.length;
-  if (totalGroups === 0) return;
-
-  if (settingGroupSize > 0 && totalGroups > 1) {
-    const completedGroups = currentGroupIndex; 
-    const confirmedPercent = (completedGroups / totalGroups) * 100;
-    const currentPercent = confirmedPercent;
-
-    if (mode === 'test') {
-      testGroupBarContainer.classList.remove('hidden');
-      testGroupTextContainer.classList.remove('hidden');
-      testGroupBarConfirmed.style.width = `${confirmedPercent}%`;
-      testGroupBarCurrent.style.width = `${currentPercent}%`;
-      testGroupText.innerText = `グループ ${completedGroups + 1} / ${totalGroups}`;
-    } else if (mode === 'review') {
-      reviewGroupBarContainer.classList.remove('hidden');
-      reviewGroupTextContainer.classList.remove('hidden');
-      reviewGroupBarConfirmed.style.width = `${confirmedPercent}%`;
-      reviewGroupBarCurrent.style.width = `${currentPercent}%`;
-      reviewGroupText.innerText = `グループ ${completedGroups + 1} / ${totalGroups}`;
-    }
-  } else {
-    testGroupBarContainer.classList.add('hidden');
-    testGroupTextContainer.classList.add('hidden');
-    reviewGroupBarContainer.classList.add('hidden');
-    reviewGroupTextContainer.classList.add('hidden');
-  }
-
-  const currentGroupQuestions = studyGroups[currentGroupIndex] || [];
+  if (originalList.length === 0) return;
   // 出題の途中で丸付けしているとき（reviewEndsSession）は、答えた分だけを全体として数える
-  const N = reviewEndsSession ? currentList.length : currentGroupQuestions.length;
+  const N = reviewEndsSession ? currentList.length : originalList.length;
   if (N === 0) return;
 
   const activeCurrent = currentIndex;
-  const confirmedCount = N - currentList.length;
+  // 終わった問題の数 ＝ 全体 − いまの周に残っている問題 − まだ出していない問題（「1周の上限」の補充の控え）。
+  // 出題の途中で丸付けしているとき（reviewEndsSession）は、全体を currentList で数えているので、控えは引かない
+  const confirmedCount = N - currentList.length - (reviewEndsSession ? 0 : pendingQueue.length);
   // 丸付け中は、この周で⭕にした問題も緑（確定）に数える。間違えた問題は、次の周で解き直すまで確定しない。
   // ここまでに⭕にした数 ＝ 採点を終えた数 − 間違えた数
   const gradedCorrect = (mode === 'review') ? Math.max(0, currentIndex - wrongQuestions.length) : 0;
@@ -214,7 +188,7 @@ function updateTaskProgress(mode) {
 function startLearning(problemData) {
   const shouldSrsSort = checkSrsSort.checked;
   const shouldShuffle = checkRandom.checked;
-  settingGroupSize = Math.max(0, parseInt(inputGroupSize.value) || 0);
+  settingWindowSize = Math.max(0, parseInt(inputWindowSize.value) || 0);
   settingQuestionLimit = Math.max(0, parseInt(inputQuestionLimit.value) || 0);
 
   // 問題と答えを逆にする問題集は、この時点までに library.js が既に
@@ -227,6 +201,8 @@ function startLearning(problemData) {
     return {
       id: id,
       setPath: item.setPath || null,
+      swapOf: item.swapOf || null,        // 逆向きの問題のとき、元の問題の id
+      origin: item.origin || null,        // 逆向きの問題のとき、元の問題の中身（問題文・答え・解説）
       question: item.question,
       answer: item.answer,
       commentary: item.commentary || '',
@@ -271,22 +247,21 @@ function startLearning(problemData) {
     originalList = shuffleArray(originalList);
   }
 
-  studyGroups = [];
-  if (settingGroupSize === 0) {
-    studyGroups.push(originalList);
+  // 「1周の上限」があり、それより多いときは、先頭の分だけを出して、残りは補充の控えにする（優先順のまま）
+  if (settingWindowSize > 0 && originalList.length > settingWindowSize) {
+    currentList = originalList.slice(0, settingWindowSize);
+    pendingQueue = originalList.slice(settingWindowSize);
   } else {
-    for (let i = 0; i < originalList.length; i += settingGroupSize) {
-      studyGroups.push(originalList.slice(i, i + settingGroupSize));
-    }
+    currentList = originalList.slice();
+    pendingQueue = [];
   }
-
-  currentGroupIndex = 0;
-  currentList = [...studyGroups[currentGroupIndex]];
 
   userAnswers = {};
   userHasDrawn = {};
   wrongQuestions = [];
   answeredThisSession = {};
+  retryFails = {};
+  lastHistoryEntry = {};
   multiAnswerProgress = {};
   shownProbability = {};
   reviewEndsSession = false;
@@ -915,6 +890,9 @@ function finalizeReviewItem(isCorrect) {
     prevAnsweredThisSession: !!answeredThisSession[activeQuestion.id],
     prevMultiAnswerProgress: multiAnswerProgress[activeQuestion.id] ? multiAnswerProgress[activeQuestion.id].slice() : undefined,
     prevHistoryLength: historyPending.length,
+    prevRetryFails: retryFails[activeQuestion.id],
+    prevLastEntry: lastHistoryEntry[activeQuestion.id],
+    prevLastEntryRetries: lastHistoryEntry[activeQuestion.id] ? lastHistoryEntry[activeQuestion.id].retries : undefined,
     prevWrongQuestionsLength: wrongQuestions.length
   };
 
@@ -945,6 +923,15 @@ function undoLastReviewItem() {
     delete answeredThisSession[a.questionId];
   }
   recordProgress(a.question);   // 戻した値で progressStats・端末の控えを上書きする
+
+  // 解き直しの失敗の回数と、「最初の解答の履歴」も、元に戻す
+  if (a.prevRetryFails === undefined) delete retryFails[a.questionId]; else retryFails[a.questionId] = a.prevRetryFails;
+  if (a.prevLastEntry) {
+    lastHistoryEntry[a.questionId] = a.prevLastEntry;
+    if (a.prevLastEntryRetries === undefined) delete a.prevLastEntry.retries; else a.prevLastEntry.retries = a.prevLastEntryRetries;
+  } else {
+    delete lastHistoryEntry[a.questionId];
+  }
 
   // 履歴ログに記録済みなら、まだ送信していない分だけ取り消す
   if (historyPending.length > a.prevHistoryLength) {
@@ -1019,18 +1006,19 @@ function evaluateRoundResult() {
     transitionPhase(() => switchPhase('import'));
     return;
   }
-  if (wrongQuestions.length > 0) {
-    currentList = [...wrongQuestions];
-    switchPhase('test');
-  } else {
-    goToNextGroupOrFinish();
-  }
+  startNextRound([...wrongQuestions]);
 }
 
-function goToNextGroupOrFinish() {
-  currentGroupIndex++;
-  if (currentGroupIndex < studyGroups.length) {
-    currentList = [...studyGroups[currentGroupIndex]];
+// 次の周を始める。carry は、前の周で間違えて、もう一度出す問題。
+// 「1周の上限」があるときは、上限に空きがある分だけ、まだ出していない問題（pendingQueue の先頭）を補充する。
+// つまり、正解するたびに新しい問題が加わり、毎回、上限の数で出題される。
+// 補充する問題が尽きたら、あとは、間違えた問題だけが残って、少しずつ減っていく（上限が無いときと同じ動き）。
+// 出す問題が1つも無ければ、終わり（ホーム画面へ）
+function startNextRound(carry) {
+  const room = settingWindowSize > 0 ? Math.max(0, settingWindowSize - carry.length) : 0;
+  const list = carry.concat(pendingQueue.splice(0, room));
+  if (list.length > 0) {
+    currentList = list;
     switchPhase('test');
   } else {
     transitionPhase(() => switchPhase('import'));
